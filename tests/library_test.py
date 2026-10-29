@@ -22,10 +22,21 @@ def main():
     lib.note(here, 130, 8, [os.path.join(here, "1.jpg")])          # same folder again: replaced, not duplicated
     lib.close()
 
-    b._settings.data["recent"] = [here, r"Z:\old\recent-only"]     # a folder scanned before the library existed
+    import sqlite3
+    old_dir = os.path.join(here, "OldShoot")
+    c = sqlite3.connect(str(bridge.db_file()))                     # photos cached by a scan from before the library existed
+    c.execute("CREATE TABLE IF NOT EXISTS results (path TEXT PRIMARY KEY, size INTEGER, mtime REAL, key TEXT, data TEXT, scanned REAL)")
+    for i in range(10):
+        c.execute("INSERT INTO results VALUES(?,?,?,?,?,?)", (os.path.normcase(os.path.join(old_dir, f"IMG_{i}.jpg")), 1, 1.0, "k", "{}", 1.0))
+    c.commit()
+    c.close()
+    os.makedirs(old_dir)
+    b._settings.data["recent"] = [here, r"Z:\old\recent-only", old_dir]     # folders scanned before the library existed
     rows = b.library()
     by = {os.path.normcase(r["folder"]): r for r in rows}
-    assert len(rows) == 3, rows
+    assert len(rows) == 4, rows
+    legacy = by[os.path.normcase(old_dir)]
+    assert legacy["total"] == 10 and len(legacy["thumbs"]) == 4 and legacy["exists"], legacy
     r = by[os.path.normcase(here)]
     assert (r["total"], r["flagged"], r["exists"]) == (130, 8, True), r
     assert by[os.path.normcase(gone)]["exists"] is False

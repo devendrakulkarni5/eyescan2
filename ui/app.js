@@ -965,10 +965,12 @@ async function renderLibrary() {
   $("library").innerHTML = rows.length ? `<h3>Your library<span class="muted">${rows.length} scanned folder${rows.length > 1 ? "s" : ""}</span></h3><div class="libgrid">` + rows.map((r, i) => {
     const open = tabOf(r.folder) >= 0;
     const mos = [0, 1, 2, 3].map((k) => r.thumbs[k] && r.exists ? `<img src="${imgUrl(r.thumbs[k], 240)}" alt="" loading="lazy">` : "<i></i>").join("");
-    const meta = [r.total !== null ? `<span class="lb">${r.total.toLocaleString()} photos</span>` : `<span class="lb">Not summarised yet</span>`,
-      r.flagged ? `<span class="lb eyes">${r.flagged} closed</span>` : "", open ? `<span class="lb ok">Open</span>` : "", r.exists ? "" : `<span class="lb off">Offline</span>`].join("");
-    return `<div class="lcard${r.exists ? "" : " off"}" tabindex="0" role="button" data-i="${i}" title="${esc(r.folder)}"><div class="mos">${mos}</div>` +
-      `<div class="lp"><b>${esc(baseName(r.folder))}</b><span class="muted path">${esc(r.folder)}</span><div class="lmeta">${meta}</div><span class="muted when">${r.scanned ? "Scanned " + ago(r.scanned) : ""}</span></div>` +
+    const chips = [r.total !== null ? `<span class="lb">${r.total.toLocaleString()} photos</span>` : "",
+      r.flagged ? `<span class="lb eyes">${r.flagged} closed</span>` : ""].join("");
+    const meta = [open ? `<span class="lb ok">Open</span>` : "", r.exists ? "" : `<span class="lb off">Offline</span>`,
+      r.total === null ? `<span class="lb">Not scanned yet</span>` : ""].join("");
+    return `<div class="lcard${r.exists ? "" : " off"}${r.flagged ? " has-closed" : ""}" tabindex="0" role="button" data-i="${i}" title="${esc(r.folder)}"><div class="mw"><div class="mos">${mos}</div><div class="chips">${chips}</div></div>` +
+      `<div class="lp"><b>${esc(baseName(r.folder))}</b><span class="path">${esc(r.folder)}</span>${meta ? `<div class="lmeta">${meta}</div>` : ""}<span class="when">${r.scanned ? "Scanned " + ago(r.scanned) : ""}</span></div>` +
       `<button class="ghost sm lmore" data-more="${i}" title="More" aria-label="More actions">${ico("more-horizontal")}</button></div>`;
   }).join("") + `</div>` : "";
 }
