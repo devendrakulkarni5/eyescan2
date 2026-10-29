@@ -102,7 +102,7 @@ def notes_for(version: str, given: str | None) -> str:
         m = re.search(rf"^## {re.escape(version)}\s*\n(.*?)(?=^## |\Z)", CHANGELOG.read_text("utf-8"), re.M | re.S)
         if m and m.group(1).strip():
             return m.group(1).strip()
-    return f"EyeScan {version}"
+    return f"Keeper {version}"
 
 
 def preflight(publish: bool) -> tuple[str | None, str | None]:
@@ -142,13 +142,13 @@ def main() -> None:
     if args.publish_only:
         iscc, gh = preflight(True)
         ver = current_version()
-        setup, tag = ROOT / "installer" / f"EyeScan2-Setup-{ver}.exe", f"v{ver}"
+        setup, tag = ROOT / "installer" / f"Keeper-Setup-{ver}.exe", f"v{ver}"
         if not setup.exists():
             die(f"{setup.name} not found - run build_exe.bat and build_installer.bat first")
         if run([gh, "release", "view", tag, "--repo", releases_repo()], capture_output=True).returncode == 0:
             die(f"Release {tag} already exists on {releases_repo()} - bump APP_VERSION and installer.iss first")
         step(f"Publishing {tag} to {releases_repo()}")
-        if run([gh, "release", "create", tag, setup, "--repo", releases_repo(), "--title", f"EyeScan {ver}",
+        if run([gh, "release", "create", tag, setup, "--repo", releases_repo(), "--title", f"Keeper {ver}",
                 "--notes", notes_for(ver, args.notes)]).returncode != 0:
             die("Upload failed")
         print(f"\nDONE - https://github.com/{releases_repo()}/releases/tag/{tag}")
@@ -186,9 +186,9 @@ def main() -> None:
                 raise RuntimeError("self-tests failed")
             print("   passed")
 
-        step("Building EyeScan2.exe (a few minutes)")
-        must([PY, "-m", "PyInstaller", "--noconfirm", "--clean", "EyeScan2.spec"])
-        exe, doctor = ROOT / "dist" / "EyeScan2" / "EyeScan2.exe", ROOT / "dist" / "EyeScan2" / "doctor.txt"
+        step("Building Keeper.exe (a few minutes)")
+        must([PY, "-m", "PyInstaller", "--noconfirm", "--clean", "Keeper.spec"])
+        exe, doctor = ROOT / "dist" / "Keeper" / "Keeper.exe", ROOT / "dist" / "Keeper" / "doctor.txt"
         step("Verifying the built exe")
         doctor.unlink(missing_ok=True)
         run([exe, "--doctor", doctor], timeout=180)
@@ -199,7 +199,7 @@ def main() -> None:
         doctor.unlink(missing_ok=True)
 
         step("Building installer")
-        setup = ROOT / "installer" / f"EyeScan2-Setup-{new}.exe"
+        setup = ROOT / "installer" / f"Keeper-Setup-{new}.exe"
         setup.unlink(missing_ok=True)
         must([iscc, "installer.iss"])
         if not setup.exists():
@@ -215,7 +215,7 @@ def main() -> None:
         return
     step(f"Publishing {tag} to {releases_repo()}")
     r = run([gh, "release", "create", tag, setup, "--repo", releases_repo(),
-             "--title", f"EyeScan {new}", "--notes", notes_for(new, args.notes)])
+             "--title", f"Keeper {new}", "--notes", notes_for(new, args.notes)])
     if r.returncode != 0:
         die(f"Upload failed. Installer is built at {setup}; version files already say {new}. "
             f"Retry: gh release create {tag} \"{setup}\" --repo {releases_repo()}")

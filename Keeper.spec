@@ -1,12 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Single source of truth for the build:  pyinstaller --noconfirm --clean EyeScan2.spec
+# Single source of truth for the build:  pyinstaller --noconfirm --clean Keeper.spec
 # (build_exe.bat does this and then smoke-tests the result.)
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('engine/model', 'model'), ('ui', 'ui'), ('LICENSE.txt', '.')]
 binaries = []
 hiddenimports = ['cli', 'bridge']
-for pkg in ('mediapipe', 'onnxruntime', 'webview', 'send2trash'):
+for pkg in ('mediapipe', 'onnxruntime', 'webview', 'send2trash', 'rawpy'):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
@@ -36,7 +36,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='EyeScan2',
+    name='Keeper',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -47,7 +47,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/EyeScan.ico',
+    icon='assets/Keeper.ico',
     version='assets/version_info.txt',
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, upx_exclude=[], name='EyeScan2')
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, upx_exclude=[], name='Keeper')

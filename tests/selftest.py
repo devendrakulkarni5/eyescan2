@@ -1,4 +1,4 @@
-"""Headless self-test for EyeScan. Run: python selftest.py"""
+"""Headless self-test for the Keeper engine. Run: python selftest.py"""
 from __future__ import annotations
 
 import re
@@ -900,6 +900,93 @@ def main() -> int:
     r_h3.reclassify(0.5)
     check("hidden + a closed face -> still flagged closed", r_h3.verdict == "closed")
 
+    # background people: closed eyes behind / out of focus the subject are tagged, not flagged
+    shut = dict(blink_left=0.9, blink_right=0.9, ear_left=0.05, ear_right=0.05)
+    main = lambda **kw: F(box=(0.3, 0.2, 0.5, 0.45), **kw)
+
+    def res(*faces):
+        r = ImageResult(Path("bg.jpg"), faces=list(faces), width=4000, height=3000)
+        r.reclassify(0.5)
+        return r
+
+    r_bg = res(main(), F(box=(0.70, 0.2, 0.74, 0.26), **shut))
+    check("tiny background face with closed eyes -> photo stays open",
+          r_bg.verdict == "open" and r_bg.faces[1].state == "background", r_bg.verdict)
+    check("...and is tagged 'background closed'", "background closed" in r_bg.tags())
+    core.MAIN_ONLY = False
+    check("main-subjects-only off -> that closed face is flagged again", res(
+        main(), F(box=(0.70, 0.2, 0.74, 0.26), **shut)).verdict == "closed")
+    core.MAIN_ONLY = True
+    check("soft + smaller face is background", res(
+        main(sharp=20.0), F(box=(0.6, 0.2, 0.75, 0.40), sharp=5.0, **shut)).verdict == "open")
+    check("equally sharp smaller face still counts", res(
+        main(sharp=20.0), F(box=(0.6, 0.2, 0.75, 0.40), sharp=18.0, **shut)).verdict == "closed")
+    check("two equal faces, one closed: flagged", res(
+        main(), F(box=(0.6, 0.2, 0.8, 0.45), **shut)).verdict == "closed")
+    check("the main subject's own closed eyes still flag", res(
+        main(**shut), F(box=(0.70, 0.2, 0.74, 0.26))).verdict == "closed")
+    bgf = F(box=(0.70, 0.2, 0.74, 0.26), **shut)
+    bgf.override = "closed"
+    check("a manual 'closed' override beats the background rule", res(main(), bgf).verdict == "closed")
+
+    # glasses: pixels settle "closed" (blink score + lids can be fooled by frames / lenses)
+    g_shut = dict(glasses=0.3, **shut)
+    check("glasses + iris clearly visible -> open", F(iris_left=0.6, iris_right=0.6, **g_shut).state == "open")
+    check("glasses + no iris disc -> still closed", F(iris_left=0.02, iris_right=0.05, **g_shut).state == "closed")
+    check("glasses + undecidable iris -> can't judge, not flagged",
+          F(iris_left=0.2, iris_right=0.2, **g_shut).state == "hidden")
+    check("no glasses: the iris check is not applied",
+          F(iris_left=0.6, iris_right=0.6, **shut).state == "closed")
+    wk = F(iris_left=0.6, iris_right=0.02, **g_shut)
+    check("glasses, one eye clearly open: a wink, not closed", wk.state == "open" and wk.wink)
+
+    def eyes_pts():
+        for cx, idx in ((0.35, core.IRIS_RIGHT_IDX), (0.65, core.IRIS_LEFT_IDX)):
+            pts[idx[0]] = (cx, 0.4)
+            for k, i in enumerate(idx[1:]):
+                a = 1.5708 * k
+                pts[i] = (cx + 0.0125 * np.cos(a), 0.4 + 0.0125 * np.sin(a))
+    eyes_pts()
+    (il, ir), gl = core.eye_glasses_iris(scene(False), pts, S, S)
+    check("open eyes: iris disc contrast is high", il > 0.5 and ir > 0.5 and gl < 0.05, f"{il} {ir} {gl}")
+    shut_img = np.full((S, S, 3), (205, 160, 135), np.uint8)
+    (il, ir), gl = core.eye_glasses_iris(shut_img, pts, S, S)
+    check("shut lids on plain skin: no iris contrast", abs(il) < 0.1 and abs(ir) < 0.1, f"{il} {ir}")
+    framed = shut_img.copy()
+    for cx in (0.35, 0.65):
+        x, y = int(cx * S), int(0.4 * S)
+        framed[y - 24:y - 21, x - 38:x + 38] = (25, 25, 28)
+        framed[y + 21:y + 24, x - 38:x + 38] = (25, 25, 28)
+        framed[y - 24:y + 24, x - 38:x - 35] = (25, 25, 28)
+        framed[y - 24:y + 24, x + 35:x + 38] = (25, 25, 28)
+    (_, _), gl = core.eye_glasses_iris(framed, pts, S, S)
+    check("a frame round both eyes is detected as glasses", gl is not None and gl >= core.GLASSES_MIN, f"{gl}")
+    # look tags: teeth, funny face, bindi
+    check("smile + open jaw = teeth showing", F(smile=0.8, mouth_open=0.3).teeth_showing)
+    check("closed-mouth smile is not teeth", not F(smile=0.8, mouth_open=0.02).teeth_showing)
+    check("tongue out = funny face", F(funny=0.8).funny_face and not F().funny_face)
+    r_t = ImageResult(Path("t.jpg"), faces=[F(smile=0.8, mouth_open=0.3, funny=0.7, bindi=0.003)])
+    r_t.reclassify(0.5)
+    check("tags: teeth, funny face, bindi",
+          {"teeth", "funny face", "bindi"} <= set(r_t.tags()), str(r_t.tags()))
+    pts[9], pts[10] = (0.5, 0.30), (0.5, 0.20)
+    pts[234], pts[454] = (0.1, 0.5), (0.9, 0.5)
+    skin_img = np.full((S, S, 3), (205, 160, 135), np.uint8)
+    check("plain forehead: no bindi", core.bindi_score(skin_img, pts, S, S) < core.BINDI_MIN)
+    dot = skin_img.copy()
+    dot[int(0.26 * S) - 6:int(0.26 * S) + 6, int(0.5 * S) - 6:int(0.5 * S) + 6] = (190, 20, 40)
+    check("red dot between brows and hairline = bindi",
+          core.bindi_score(dot, pts, S, S) >= core.BINDI_MIN, str(core.bindi_score(dot, pts, S, S)))
+    dot2 = skin_img.copy()
+    dot2[int(0.26 * S) - 6:int(0.26 * S) + 6, int(0.2 * S) - 6:int(0.2 * S) + 6] = (190, 20, 40)
+    check("red mark far off the midline is not a bindi", core.bindi_score(dot2, pts, S, S) < core.BINDI_MIN)
+    check("cache keeps funny + bindi", (lambda b: b.funny == 0.7 and abs(b.bindi - 0.003) < 1e-6)(
+        core.result_from_dict("x.jpg", core.result_to_dict(ImageResult(
+            Path("x.jpg"), faces=[F(funny=0.7, bindi=0.003)]))).faces[0]))
+    check("cache keeps iris + glasses", (lambda b: b.iris_left == 0.4 and b.glasses == 0.2)(
+        core.result_from_dict("x.jpg", core.result_to_dict(ImageResult(
+            Path("x.jpg"), faces=[F(iris_left=0.4, iris_right=0.5, glasses=0.2)]))).faces[0]))
+
     # cache round-trip keeps the new measurements
     fr = F(gaze_h=0.7, gaze_v=-0.2, occ_left=0.3, occ_right=0.35)
     v = np.random.RandomState(1).randn(128).astype(np.float32)
@@ -979,6 +1066,31 @@ def main() -> int:
     check("people: same identity shares a number", labs[0] == labs[3] == labs[5] == labs[7]
           and labs[1] == labs[4] and labs[2] == labs[6])
     check("people: the most photographed person is #1", labs[0] == 1 and pc[0]["photos"] == 4)
+    # the same face detected twice in one photo is one face; two people side by side stay two
+    def eyed(box, cx):
+        f = F(box=box)
+        f.eyes = [[(cx - 0.02, 0.30), (cx - 0.018, 0.30)], [(cx + 0.02, 0.30), (cx + 0.022, 0.30)]]
+        return f
+    d1, d2, d3 = eyed((0.40, 0.2, 0.60, 0.5), 0.50), eyed((0.43, 0.22, 0.58, 0.48), 0.505), eyed((0.70, 0.2, 0.90, 0.5), 0.80)
+    d2.face_score, d1.face_score = 0.7, 0.95
+    dr = ImageResult(Path("dup.jpg"), faces=[d2, d1, d3])
+    dr.width = dr.height = 1000
+    dr.n_people = 3
+    check("duplicate faces: the same face found twice collapses to the better one",
+          dr.merge_duplicate_faces() == 1 and dr.faces == [d1, d3] and dr.n_people == 2)
+    check("duplicate faces: people side by side are kept", len(ImageResult(Path("s.jpg"), faces=[d1, d3]).faces) == 2
+          and ImageResult(Path("s.jpg"), faces=[d1, d3]).merge_duplicate_faces() == 0)
+
+    # two look-alikes in ONE photo are two people, never merged
+    base = cents[0]
+    va = (base + rs.randn(128) * 0.05); va = (va / np.linalg.norm(va)).astype(np.float32)
+    vb = (base + rs.randn(128) * 0.05); vb = (vb / np.linalg.norm(vb)).astype(np.float32)
+    fa, fb = F(box=(0.1, 0.2, 0.3, 0.4)), F(box=(0.5, 0.2, 0.7, 0.4))
+    fa.emb, fb.emb = va, vb
+    twins = [ImageResult(Path("tw.jpg"), faces=[fa, fb])]
+    people.cluster_people(twins)
+    check("people: two similar faces in one photo stay two people",
+          fa.person is not None and fb.person is not None and fa.person != fb.person)
     pr = frame("pr.jpg", [F(box=bx1), F(box=bx2)])
     pr2 = frame("pr2.jpg", [F(box=(0.57, 0.22, 0.77, 0.47)), F(box=(0.12, 0.2, 0.32, 0.45))])
     check("match_faces: falls back to position when there is no embedding",

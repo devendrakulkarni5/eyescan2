@@ -6,7 +6,7 @@ color 0A
 :: =====================================================
 :: Configuration
 :: =====================================================
-set PROJECT=EyeScan 2
+set PROJECT=Keeper
 set BRANCH=main
 set LOGFILE=deploy.log
 

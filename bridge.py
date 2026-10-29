@@ -1,4 +1,4 @@
-"""Bridge between the EyeScan engine and the web UI.
+"""Bridge between the Keeper engine and the web UI.
 
 Everything the UI can do is a public method on ``Bridge`` (exposed to JavaScript by
 pywebview). All state is private (leading underscore) because pywebview walks public
@@ -36,8 +36,8 @@ if ENGINE_DIR.is_dir():
 import eyescan_core as core  # noqa: E402
 import eyescan_names  # noqa: E402
 
-APP_NAME = "EyeScan 2"
-APP_VERSION = "2.2.0"
+APP_NAME = "Keeper"
+APP_VERSION = "2.3.0"
 # "owner/repo" of the GitHub repository whose latest Release (tag like v2.1.0) is the newest version
 # (a separate PUBLIC repo used only for installers: the source repo is private and would 404)
 GITHUB_REPO = "devendrakulkarni5/eyescan2-releases"
@@ -54,14 +54,16 @@ BULK = {
     "dups": lambda r: r.is_duplicate,
 }
 BULK_FOLDER = {"closed": "Closed Eyes", "unclear": "Blurry", "dups": "Duplicates"}
-# settings that EyeScan 2 adds on top of core.DEFAULT_SETTINGS (kept in extras.json)
+# settings that Keeper adds on top of core.DEFAULT_SETTINGS (kept in extras.json)
 EXTRA_DEFAULTS = {
     "blur_cut": core.BLUR_SHARP_MIN, "misfocus_ratio": core.MISFOCUS_RATIO,
     "min_face": core.DEFAULT_MIN_FACE_AREA, "max_dim": DEFAULT_RES,
+    "main_only": core.MAIN_ONLY,    # judge only the main subjects, not background people
     "people_sort": "photos",        # photos | name | closed | unnamed
     "grid_ratio": "original",       # square | 3:2 | 2:3 | original
     "v2_defaults": 0,               # one-time migration marker
-    "check_updates": True,          # look for a newer version on start (the only online call)
+    "after_scan_tab": "closed",     # tab to open when a scan completes (scan itself starts on All); "off" = never switch
+    "check_updates": True,         # look for a newer version on start (the only online call)
     "overlay_parts": ["outline", "forehead", "jaw", "chin", "cheeks", "brows", "nose", "lips", "eyes"],
 }
 # automatic naming is stricter than clustering: SFace scores two different people ~0.47 on real shoots
@@ -71,7 +73,7 @@ ENGINE_KEYS = {"robust", "deep", "animals", "keep_down", "min_face", "max_dim"}
 
 def data_dir() -> Path:
     base = os.environ.get("LOCALAPPDATA") or str(Path.home())
-    d = Path(base) / "EyeScan2"
+    d = Path(base) / "EyeScan2"   # folder name kept from before the rename to Keeper so existing data carries over
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -113,6 +115,7 @@ def summarize(r: "core.ImageResult", pnames=None, animal_names=None) -> dict:
         "left": round(f.blink_left, 2), "right": round(f.blink_right, 2),
         "smile": round(f.smile, 2), "smiling": bool(f.smiling),
         "away": bool(f.looks_away), "hidden": bool(f.eyes_hidden),
+        "glasses": bool(f.has_glasses),
         "pitch": None if f.pitch is None else round(f.pitch, 1),
         "yaw": None if f.yaw is None else round(f.yaw, 1),
         "override": f.override, "person": f.person, "pname": pnames.get(f.person),
@@ -129,6 +132,11 @@ def summarize(r: "core.ImageResult", pnames=None, animal_names=None) -> dict:
         "people": r.people, "group": r.group, "focus": r.focus,
         "unclear": bool(r.unclear), "tags": r.tags(), "names": names,
         "smiling": any(f.smiling for f in r.faces), "animals": animals,
+        "teeth": any(f.teeth_showing for f in r.faces),
+        "funny": any(f.funny_face for f in r.faces),
+        "bindi": any(f.has_bindi for f in r.faces),
+        "glasses": any(f.has_glasses for f in r.faces),
+        "eyes_hidden": any(f.state == "hidden" for f in r.faces),
         "dup_group": r.dup_group, "dup_best": bool(r.dup_best), "dup_why": r.dup_why,
         "rescue": str(r.rescue.path) if r.rescue is not None else None,
         "size": r.file_size, "w": r.width, "h": r.height,
@@ -208,7 +216,7 @@ class Bridge:
         except Exception:  # noqa: BLE001
             pass
         self._extras["max_dim"] = snap_res(self._extras["max_dim"])
-        if not self._extras.get("v2_defaults"):       # first run of EyeScan 2
+        if not self._extras.get("v2_defaults"):       # first run of Keeper
             self._settings["people"] = True           # recognise people by default
             self._extras["v2_defaults"] = 1
             self._settings.save()
@@ -268,7 +276,7 @@ class Bridge:
         try:
             import urllib.request
             req = urllib.request.Request(UPDATE_URL, headers={
-                "User-Agent": f"EyeScan2/{APP_VERSION}", "Accept": "application/vnd.github+json"})
+                "User-Agent": f"Keeper/{APP_VERSION}", "Accept": "application/vnd.github+json"})
             with urllib.request.urlopen(req, timeout=6) as resp:
                 info = json.loads(resp.read(1 << 20).decode("utf-8"))
             latest = str(info["tag_name"]).lstrip("vV")
@@ -293,6 +301,7 @@ class Bridge:
         core.BLUR_SHARP_MIN = float(self._extras["blur_cut"])
         core.MISFOCUS_RATIO = float(self._extras["misfocus_ratio"])
         core.EAR_DOWN = float(self._settings["ear_down"])
+        core.MAIN_ONLY = bool(self._extras["main_only"])
         try:
             import eyescan_gpu
             eyescan_gpu.set_mode(self._settings["gpu_device"] or eyescan_gpu.AUTO)
@@ -325,6 +334,8 @@ class Bridge:
         self._settings.save()
         self._save_extras()
         self._apply_globals()
+        if "main_only" in changed and self._results and not self._scanning:
+            self._finish_analysis()      # cached measurements, no re-detection
         if changed & ENGINE_KEYS and self._engine is not None and not self._scanning:
             try:
                 self._engine.close()
@@ -665,7 +676,7 @@ class Bridge:
         if not self._results:
             return {"ok": False, "error": "Nothing to export yet."}
         res = self._window.create_file_dialog(
-            webview.SAVE_DIALOG, save_filename="eyescan_report.csv",
+            webview.SAVE_DIALOG, save_filename="keeper_report.csv",
             file_types=("CSV (*.csv)",))
         if not res:
             return {"ok": False, "cancelled": True}
@@ -773,6 +784,45 @@ class Bridge:
                     else:
                         self._names.rename_person(old, name)
             self._names.save_person(name, cen, max(1, merged["faces"]), ex)
+        return self._people_payload()
+
+    def split_person(self, cluster_id: int) -> dict:
+        """Split one recognised person that is really several people: its faces are grouped again with
+        much stricter thresholds. Lasts until the next scan; saved names are not touched."""
+        import numpy as np
+        from types import SimpleNamespace
+        from eyescan_people import cluster_people, SAME_PERSON, MERGE_PERSON
+        cid = int(cluster_id)
+        old = next((c for c in self._clusters if c["id"] == cid), None)
+        if old is None:
+            return {"ok": False, "error": "That person isn't available."}
+        rs = [r for r in self._results.values() if any(f.person == cid for f in r.faces)]
+        proxies = [SimpleNamespace(path=r.path, width=getattr(r, "width", 0), height=getattr(r, "height", 0),
+                                   faces=[f for f in r.faces if f.person == cid]) for r in rs]
+        parts = cluster_people(proxies, same=SAME_PERSON + 0.13, merge=MERGE_PERSON + 0.14)
+        if len(parts) < 2:
+            for r in rs:
+                for f in r.faces:
+                    if f.person is None and getattr(f, "emb", None) is not None:
+                        f.person = cid
+            return {"ok": False, "error": "These faces all look like the same person to the recognition model."}
+        base = max(c["id"] for c in self._clusters)
+        new = []
+        for k, part in enumerate(parts):
+            nid = cid if k == 0 else base + k
+            for pr, f in ((pr, f) for pr in proxies for f in pr.faces if f.person == part["id"]):
+                f.person = -nid                      # mark, so ids from different parts cannot collide
+            br, bf = part["best"]
+            new.append({"id": nid, "faces": part["faces"], "path": str(br.path), "box": [round(v, 4) for v in bf.box],
+                        "_cen": part["centroid"], "_ex": part["exemplars"], "quality": round(part["quality"], 2)})
+        for r in rs:
+            for f in r.faces:
+                if f.person is not None and f.person < 0:
+                    f.person = -f.person
+        for c in new:
+            c["photos"] = sorted({str(r.path) for r in rs for f in r.faces if f.person == c["id"]})
+            c["closed"] = sum(1 for r in rs if r.is_flagged and any(f.person == c["id"] for f in r.faces))
+        self._clusters = [c for c in self._clusters if c["id"] != cid] + new
         return self._people_payload()
 
     def name_person(self, cluster_id: int, name: str) -> dict:

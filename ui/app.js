@@ -25,6 +25,12 @@ const FILTERS = [
     ["animal", "Animals", "var(--ocean)", (r) => r.animals.length > 0, "paw-print"],
     ["smile", "Smiling", "var(--sun)", (r) => r.smiling, "smile"],
     ["noface", "No face", "var(--muted)", (r) => r.verdict === "no-face", "user-x"]]],
+  ["Look", [
+    ["teeth", "Teeth showing", "var(--sun)", (r) => r.teeth, "laugh"],
+    ["funny", "Funny face", "var(--sun)", (r) => r.funny, "annoyed"],
+    ["glasses", "Glasses", "var(--ocean)", (r) => r.glasses, "glasses"],
+    ["hid", "Eyes hidden", "var(--muted)", (r) => r.eyes_hidden, "eye-off"],
+    ["bindi", "Bindi", "var(--coral)", (r) => r.bindi, "circle-dot"]]],
 ];
 const ALLF = FILTERS.flatMap((g) => g[1]);
 const predOf = (k) => ALLF.find((f) => f[0] === k)[3];
@@ -268,7 +274,7 @@ function detectionDialog() {
 }
 function aboutDialog() {
   const a = S.about;
-  dialog({ title: "About EyeScan", icon: "info", body: `<div class="about" style="text-align:center"><img data-logo src="assets/icon-dark.png" alt="" width="92"><h3 style="margin:6px 0 0;font-size:22px;font-weight:600">${esc(a.name)}</h3><span class="ver">Version ${esc(a.version)}</span>
+  dialog({ title: "About Keeper", icon: "info", body: `<div class="about" style="text-align:center"><img data-logo src="assets/icon-dark.png" alt="" width="92"><h3 style="margin:6px 0 0;font-size:22px;font-weight:600">${esc(a.name)}</h3><span class="ver">Version ${esc(a.version)}</span>
     <p>Find, sort and review photos fast.<br>Everything runs offline on this PC.</p><p>© ${a.year} ${esc(a.author)}<br><b>${esc(a.brand)}</b> · <a id="site" style="color:var(--sage-d);cursor:pointer;text-decoration:underline">www.deev.in</a><br><span class="muted">${esc(a.rights)}</span></p>
     <p class="hint">Built with MediaPipe, ONNX Runtime, Pillow, NumPy and pywebview. Icons by Lucide (ISC licence).</p></div>`,
     buttons: [{ label: "Close", cls: "primary", onClick: (x) => x() }], onMount: (b) => { b.querySelector("#site").onclick = () => api.open_url(a.website); } });
@@ -278,7 +284,7 @@ async function checkUpdate(manual) {
   const u = await api.check_update();
   if (!u.ok) return manual ? toast("Couldn't reach the update server. Are you online?") : null;
   if (!u.newer) return manual ? toast(`You're up to date (version ${u.current}).`) : null;
-  dialog({ title: "Update available", icon: "info", body: `<p>EyeScan <b>${esc(u.latest)}</b> is available. You have ${esc(u.current)}.</p>${u.notes ? `<div class="note">${esc(u.notes)}</div>` : ""}<p class="hint">Download the installer and run it over your current install. Your settings and database are kept.</p>`,
+  dialog({ title: "Update available", icon: "info", body: `<p>Keeper <b>${esc(u.latest)}</b> is available. You have ${esc(u.current)}.</p>${u.notes ? `<div class="note">${esc(u.notes)}</div>` : ""}<p class="hint">Download the installer and run it over your current install. Your settings and database are kept.</p>`,
     buttons: [{ label: "Later", onClick: (x) => x() }, { label: "Download", cls: "primary", onClick: (x) => { api.open_url(u.url); x(); } }] });
 }
 function propsDialog(r) {
@@ -407,6 +413,7 @@ function buildMenus() {
 window.onEvent = (e) => {
   if (e.kind === "start") {
     if (!e.partial) { S.items.clear(); S.tiles.clear(); S.rejected.clear(); S.sel.clear(); S.focus = null; S.only = null; S.people = []; S.geo = {}; }
+    if (!e.partial && (S.cfg.after_scan_tab || "closed") !== "off") { S.filter = "all"; S.sub = "all"; }
     S.stopped = null; showNotice(); S.hiddenPeople = new Set(); resetStop();
     S.folder = e.folder; $("folder-name").textContent = baseName(e.folder);
     $("start").classList.add("hidden"); $("review").classList.remove("hidden");
@@ -419,6 +426,8 @@ window.onEvent = (e) => {
     $("phase").textContent = e.stopped ? "Stopped early" : "Scan complete";
     status(`${e.stopped ? "Stopped" : "Done"}: ${S.items.size} photos, ${n} with closed eyes`);
     if (e.stopped) S.stopped = { done: e.done, total: e.total };
+    const tab = S.cfg.after_scan_tab || "closed";
+    if (tab !== "off" && !S.only) { S.filter = tab; S.sub = "all"; }
     showNotice(); scheduleRender(); renderInspector();
     if (S.cfg.people && S.info.people_ok) loadPeople(true);
     api.recent().then((r) => { S.recent = r; });
@@ -609,7 +618,7 @@ const fmtDate = (t) => t ? new Date(t * 1000).toLocaleString() : "-";
 function dataPane(i) {
   const row = (t, d, btn) => srow(t, d, btn);
   const clr = (k, label, cls = "") => `<button type="button" class="${cls}" data-clear="${k}">${label}</button>`;
-  return `<h3>Database</h3><p class="lead">EyeScan keeps scan results, people names and tags in one SQLite file. It is safe to clear: photos are never touched.</p>
+  return `<h3>Database</h3><p class="lead">Keeper keeps scan results, people names and tags in one SQLite file. It is safe to clear: photos are never touched.</p>
     <div class="sysinfo" id="db-card"><b>Location:</b> <span style="user-select:text">${esc(i.path)}</span><br><b>Size:</b> ${fmtSize(i.bytes)} · <b>Saved results:</b> ${i.results} photos · <b>People names:</b> ${i.persons} · <b>Animal tags:</b> ${i.tags}<br><b>Results from:</b> ${fmtDate(i.oldest)} &rarr; ${fmtDate(i.newest)}</div>
     <div class="btns" style="margin:10px 0"><button type="button" id="db-open">Open folder</button><button type="button" id="db-move">Move database…</button><button type="button" id="db-default" ${i.default ? "disabled" : ""}>Use default location</button></div>
     <div id="db-msg" class="hint"></div>
@@ -630,7 +639,7 @@ async function settingsDialog(startTab) {
   const res = (S.about.resolutions || [720, 1080, 1280, 1600, 1920, 2560, 3840]).map((v) => [v, RES_LABEL[v] || v]);
   const parts = Object.keys(PART_COL), on = new Set(c.overlay_parts || parts);
   const pane = {
-    det: `<h3>Detection</h3><p class="lead">How strictly EyeScan decides that eyes are closed.</p>` +
+    det: `<h3>Detection</h3><p class="lead">How strictly Keeper decides that eyes are closed.</p>` +
       rrow("threshold", "Sensitivity", "Higher flags more photos. Lower misses fewer open eyes.", 0.2, 0.8, 0.01, c.threshold) +
       rrow("ear_down", "Lid gap for looking down", "Lids at least this far apart while looking down are kept, not flagged.", 0.08, 0.2, 0.01, c.ear_down) +
       rrow("blur_cut", "Face is unclear below", "Face sharpness score under this counts as blurry.", 3, 15, 0.5, c.blur_cut) +
@@ -640,6 +649,7 @@ async function settingsDialog(startTab) {
       srow("Thorough scan", "Also checks overlapping tiles and refines each face. Finds small faces.", sw("robust", c.robust)) +
       srow("Deep scan", "Adds 3×3 tiles for very large group photos. Slower.", sw("deep", c.deep)) +
       srow("Keep looking-down faces", "Lids still apart while looking down are kept, not flagged.", sw("keep_down", c.keep_down)) +
+      srow("Main subjects only", "Closed eyes on people behind or out of focus are tagged “background closed”, not flagged.", sw("main_only", c.main_only)) +
       srow("Detect animals", "Boxes pets and other animals in photos.", sw("animals", c.animals)) +
       srow("Recognise people", S.info.people_ok ? "On by default. Groups the same person across photos and lets you name them (GPU when available)." : "The recognition model was not found.", sw("people", c.people)),
     dup: `<h3>Duplicates</h3><p class="lead">Groups near-identical shots and suggests the best frame.</p>` +
@@ -649,6 +659,7 @@ async function settingsDialog(startTab) {
       srow("Include subfolders", "Scan every folder below the one you choose.", sw("recursive", c.recursive)) +
       srow("Use saved results", "Unchanged photos are read from the local database. Makes re-scans and resumed scans fast.", sw("use_cache", c.use_cache)) +
       srow("Worker processes", "Auto uses extra processes for big folders (40+ photos).", segr("workers", [[0, "Auto"], [1, "1"], [2, "2"], [3, "3"], [4, "4"]], c.workers)) +
+      srow("Tab after scan finishes", "A scan starts on All photos and switches to this tab when done. Off keeps whichever tab you have open.", `<select data-k="after_scan_tab" class="field">${[["closed", "Closed eyes"], ["wink", "Winks"], ["down", "Looking down"], ["dups", "Duplicates"], ["blur", "Blurry / misfocused"], ["good", "Good"], ["all", "All photos"], ["off", "Off (don't switch)"]].map(([v, l]) => `<option value="${v}"${(c.after_scan_tab || "closed") === v ? " selected" : ""}>${l}</option>`).join("")}</select>`) +
       srow("Check for updates on start", "Fetches one small version file. Nothing else leaves this PC. Turn off to stay fully offline.", sw("check_updates", c.check_updates !== false)),
     sort: `<h3>Sorting</h3><p class="lead">Defaults for “Sort photos into a folder”.</p>` +
       srow("Default action", "Copy keeps originals in place. Move can be undone from the Scan menu.", segr("mode", [["copy", "Copy"], ["move", "Move"]], c.mode)) +
@@ -819,7 +830,7 @@ async function peopleDialog(opts = {}) {
       const sugs = () => (S.suggest || []).filter((s) => !dismissed.has(s.a + "-" + s.b) && S.people.some((p) => p.id === s.a) && S.people.some((p) => p.id === s.b));
       const draw = () => {
         const list = sortPeople(S.people.filter((p) => (p.name || "Person " + p.id).toLowerCase().includes(q)), $("p-sort").value);
-        $("ppl").innerHTML = list.map((p) => `<div class="person ${sel.has(p.id) ? "picked" : ""}" data-id="${p.id}"><label class="pcheck" title="Select to merge"><input type="checkbox" data-pick="${p.id}" ${sel.has(p.id) ? "checked" : ""}></label><img alt="" data-id="${p.id}"><div class="pname">${esc(p.name || "Person " + p.id)}</div><div class="hint">${p.photos.length} photos${p.closed ? ` · ${p.closed} closed` : ""}</div><button class="sm2" data-name="${p.id}">${p.name ? "Rename" : "Name…"}</button></div>`).join("") || `<div class="hint">No one matches.</div>`;
+        $("ppl").innerHTML = list.map((p) => `<div class="person ${sel.has(p.id) ? "picked" : ""}" data-id="${p.id}"><label class="pcheck" title="Select to merge"><input type="checkbox" data-pick="${p.id}" ${sel.has(p.id) ? "checked" : ""}></label><img alt="" data-id="${p.id}"><div class="pname">${esc(p.name || "Person " + p.id)}</div><div class="hint">${p.photos.length} photos${p.closed ? ` · ${p.closed} closed` : ""}</div><button class="sm2" data-name="${p.id}">${p.name ? "Rename" : "Name…"}</button><button class="sm2" data-split="${p.id}" title="Different people grouped together? Separate them">Split</button></div>`).join("") || `<div class="hint">No one matches.</div>`;
         $("ppl").querySelectorAll("img").forEach((im) => { const p = S.people.find((x) => x.id == im.dataset.id); faceThumbOf(p).then((u) => { if (u) im.src = u; }); });
         $("p-merge").textContent = `Merge selected (${sel.size})`; $("p-merge").disabled = sel.size < 2;
         const n = sugs().length; $("p-sug").innerHTML = `Possible duplicates${n ? ` (${n})` : ""}`; $("p-sug").classList.toggle("on", showSug);
@@ -838,6 +849,7 @@ async function peopleDialog(opts = {}) {
         const pick = e.target.closest("[data-pick]"); if (pick) { const id = +pick.dataset.pick; pick.checked ? sel.add(id) : sel.delete(id); draw(); return; }
         const sm = e.target.closest("[data-sugmerge]"); if (sm) { const row = sm.closest(".sugrow"); close(); return mergeDialog([+row.dataset.a, +row.dataset.b]); }
         const sd = e.target.closest("[data-sugdismiss]"); if (sd) { const row = sd.closest(".sugrow"); dismissed.add(row.dataset.a + "-" + row.dataset.b); draw(); return; }
+        const sp = e.target.closest("[data-split]"); if (sp) { sp.disabled = true; api.split_person(+sp.dataset.split).then((r) => { sp.disabled = false; if (!r.ok) return toast(r.error); applyPeopleResult(r); sel.clear(); draw(); toast("Split into separate people"); }); return; }
         const nb = e.target.closest("[data-name]"); if (nb) { const p = S.people.find((x) => x.id == nb.dataset.name); close(); return nameCluster(p); }
         if (e.target.closest(".pcheck")) return;
         const el = e.target.closest(".person"); if (!el) return; const p = S.people.find((x) => x.id == el.dataset.id);
@@ -869,6 +881,9 @@ function personMenu(p) {
     "-",
     { l: p.name ? "Rename…" : "Name this person…", a: () => nameCluster(p) },
     { l: "Merge with other people…", a: () => peopleDialog({ select: [p.id] }) },
+    { l: "Split into separate people…", a: () => confirmBox({ title: "Split this person?", sub: label, icon: "users", okLabel: "Split",
+        text: "Use this when different people were grouped together. The faces are grouped again more strictly, until you scan again. Your photos and saved names are not changed.",
+        onOk: async () => { const r = await api.split_person(p.id); if (!r.ok) return toast(r.error); applyPeopleResult(r); toast("Split into separate people"); } }) },
     "-",
     { l: "Copy name", dis: !p.name, a: () => { copyText(p.name); toast("Name copied"); } },
     { l: "Forget name and face signature", dis: !p.name, a: () => confirmBox({ title: "Forget this name?", sub: p.name, icon: "users", tone: "danger", okLabel: "Forget name",
@@ -976,7 +991,7 @@ function applyCfg() {
   S.overlay = S.cfg.overlay || "box"; document.documentElement.style.setProperty("--ts", (S.cfg.thumb_size || 160) + "px");
   $("thumbsize").value = S.cfg.thumb_size || 160; syncSegs();
   $("ratio").value = S.cfg.grid_ratio || "original";
-  $("theme-btn").innerHTML = ico(S.cfg.theme === "light" ? "moon" : "sun");
+  $("theme-btn").innerHTML = ico("sun-moon");
   const logo = "assets/icon-" + (S.cfg.theme === "light" ? "light" : "dark") + ".png";
   document.querySelectorAll("img[data-logo]").forEach((im) => { im.src = logo; });
 }
@@ -998,7 +1013,7 @@ const MENUS = [
     { l: "Grid: original shape", a: "ratio_original" }, { l: "Grid: 3:2 landscape", a: "ratio_32" }, { l: "Grid: 2:3 portrait", a: "ratio_23" }, { l: "Grid: square", a: "ratio_square" }, "-",
     { l: "Overlay: Box", a: "ov_box" }, { l: "Overlay: Mesh", a: "ov_mesh" }, { l: "Overlay: Detail (jaw, cheeks, forehead…)", a: "ov_detail" }, { l: "Overlay: Off", a: "ov_off" }, "-", { l: "Zoom to face", k: "Space", a: "zoom" }, { l: "People…", a: "people" },
     { l: "Toggle dark / light", k: "Ctrl+T", a: "theme" }, { l: "Search & commands…", k: "Ctrl+K", a: "palette" }, "-", { l: "Filter list", a: "pane_rail" }, { l: "Inspector", a: "pane_insp" }]],
-  ["Help", [{ l: "Keyboard shortcuts", k: "F1", a: "shortcuts" }, { l: "How detection works…", a: "detection" }, { l: "Check for updates…", a: "update" }, { l: "About EyeScan", a: "about" }]],
+  ["Help", [{ l: "Keyboard shortcuts", k: "F1", a: "shortcuts" }, { l: "How detection works…", a: "detection" }, { l: "Check for updates…", a: "update" }, { l: "About Keeper", a: "about" }]],
 ];
 /* ---------- wiring ---------- */
 async function init() {

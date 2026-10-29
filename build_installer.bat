@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-if not exist "dist\EyeScan2\EyeScan2.exe" (
+if not exist "dist\EyeScan2\Keeper.exe" (
     echo Run build_exe.bat first.
     pause & exit /b 1
 )
@@ -16,6 +16,6 @@ if not exist "%ISCC%" (
 "%ISCC%" installer.iss || (pause & exit /b 1)
 for /f %%v in ('".venv\Scripts\python.exe" tools\release.py --version-only') do set "VER=%%v"
 echo.
-echo Installer: installer\EyeScan2-Setup-%VER%.exe
+echo Installer: installer\Keeper-Setup-%VER%.exe
 echo To publish it as an update: publish_release.bat "what changed"
 pause

@@ -33,6 +33,10 @@ from pathlib import Path
 IMAGE_EXTS = {
     ".jpg", ".jpeg", ".jpe", ".png", ".bmp", ".webp",
     ".tif", ".tiff", ".gif", ".heic", ".heif",
+    # camera RAW (decoded by rawpy/LibRaw): Canon, Nikon, Sony, Adobe DNG and the rest
+    ".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".dng",
+    ".raf", ".orf", ".rw2", ".pef", ".srw", ".3fr", ".erf", ".kdc", ".mrw",
+    ".raw", ".x3f",
 }
 
 MODEL_FILENAME = "face_landmarker.task"
@@ -41,11 +45,11 @@ MODEL_URL = (
     "face_landmarker/float16/1/face_landmarker.task"
 )
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 # Credits / copyright - single source of truth (About box, status bar, CLI,
 # installer and exe properties all read from here or mirror it).
-APP_NAME = "EyeScan"
+APP_NAME = "Keeper"
 AUTHOR = "Devendra Kulkarni"
 BRAND = "DEeV.in"
 WEBSITE = "https://www.deev.in"
@@ -58,7 +62,7 @@ CREDIT_LINE = f"{COPYRIGHT}. {RIGHTS}"
 RAW_EXTS = (".cr2", ".cr3", ".crw", ".dng", ".nef", ".nrw", ".arw", ".srf", ".sr2",
             ".raf", ".orf", ".rw2", ".pef", ".srw", ".3fr", ".erf", ".kdc", ".mrw",
             ".raw", ".x3f")
-SCHEMA_VERSION = 9    # bump when cached measurements change shape
+SCHEMA_VERSION = 11   # bump when cached measurements change shape
 
 BLAZE_FILENAME = "blaze_face_short_range.tflite"
 BLAZE_URL = (
@@ -99,6 +103,11 @@ DUP_LEVELS = {"strict": 18, "normal": 30, "loose": 42}
 
 SMILE_MIN = 0.50                # mean mouthSmile blendshape
 MOUTH_OPEN_MIN = 0.25           # jawOpen blendshape
+TEETH_OPEN_MIN = 0.12           # smiling with the jaw at least this open = teeth showing
+FUNNY_MIN = 0.50                # tongueOut / cheekPuff / mouthPucker blendshape = funny face
+BINDI_MIN = 0.0010              # red forehead blob, share of face-width^2 (a bindi is ~0.002-0.005)
+BINDI_SAT = 0.68                # ...saturation and red dominance, as in the portrait prototype
+BINDI_RED = 40
 
 VALIDATE_CONF = 0.72            # BlazeFace score needed to confirm a face
 # Calibrated on 487 detections viewed by eye: hands, belly, a foot, a wood carving
@@ -109,7 +118,19 @@ VALIDATE_PAD = 0.40             # crop padding around the face for validation
 # --- eyes that cannot be judged / gaze / framing (heuristics, tunable) ---------- #
 HIDDEN_DARK = 0.72              # fraction of the eye window that is dark = covered
 HIDDEN_RATIO = 0.55             # a pixel is "dark" below this x the cheek brightness
-AWAY_SCORE = 26.0               # degrees off-camera (head turn + eye gaze) = looking away
+# Main subjects only: closed eyes on people behind / out of focus are tagged, not flagged.
+MAIN_ONLY = True                # user-tunable (Settings)
+BG_REL_AREA = 0.35              # face smaller than this share of the biggest face = background
+BG_REL_AREA_SOFT = 0.75         # ...or smaller than this AND clearly softer than the sharpest face
+BG_REL_SHARP = 0.50
+BG_MIN_PX = 48                  # face narrower than this (px) beside a bigger face: eyes unreadable
+# Glasses: the frame leaves strong edges in a ring around each eye; with glasses on, "closed"
+# must be confirmed by the pixels (no dark iris disc between brighter sclera / skin).
+GLASSES_MIN = 0.10              # share of the ring that is a strong edge, both eyes
+GLASSES_EDGE = 0.22             # gradient / cheek brightness that counts as a strong edge
+IRIS_VISIBLE = 0.30             # iris-vs-surround contrast at/above this = an open eye
+IRIS_UNSURE = 0.15              # between this and IRIS_VISIBLE the pixels can't settle it
+AWAY_SCORE = 26.0              # degrees off-camera (head turn + eye gaze) = looking away
 GAZE_DEG = 34.0                 # eye-in-head angle at a full eyeLook blendshape
 GAZE_NEUTRAL = 0.30             # eyeLook offset the model reports for "at the lens"
 UP_DEG = 20.0                   # ... vertical
@@ -454,6 +475,115 @@ def eye_occlusion(rgb, points, w: int, h: int):
     return out[0], out[1]
 
 
+def _cheek_ref(rgb, points, w: int, h: int):
+    """Median cheek brightness (the skin reference), or None when unusable."""
+    import numpy as np
+
+    if not points or len(points) <= 454 or w <= 0 or h <= 0:
+        return None
+    face_w = abs(points[454][0] - points[234][0]) * w
+    r = max(int(face_w * 0.04), 2)
+    vals = []
+    for i in _CHEEKS:
+        x, y = int(points[i][0] * w), int(points[i][1] * h)
+        p = rgb[max(0, y - r):min(h, y + r), max(0, x - r):min(w, x + r)]
+        if p.size:
+            vals.append(_luma(p.astype(np.float32)).ravel())
+    if not vals:
+        return None
+    ref = float(np.median(np.concatenate(vals)))
+    return ref if ref >= 25 else None
+
+
+def eye_glasses_iris(rgb, points, w: int, h: int):
+    """((iris_left, iris_right), glasses): pixel evidence for spectacles / open eyes.
+
+    ``iris_*`` = contrast of the dark iris disc against the sclera / skin beside it, in
+    cheek-brightness units: ~0.5+ on an open eye, ~0 on a shut lid (a lash or liner line
+    doesn't move the median). ``glasses`` = the weaker eye's share of strong edges in a
+    ring round the eye (a frame rim); 0 on bare skin. Any part is ``None`` if unmeasurable.
+    """
+    import numpy as np
+
+    none = ((None, None), None)
+    ref = _cheek_ref(rgb, points, w, h)
+    if ref is None or len(points) <= 477:
+        return none
+    iris, rims = [], []
+    for loop, idx in ((EYE_LEFT_LOOP, IRIS_RIGHT_IDX), (EYE_RIGHT_LOOP, IRIS_LEFT_IDX)):
+        xs = [points[i][0] * w for i in loop]
+        ys = [points[i][1] * h for i in loop]
+        ex0, ex1, ey0, ey1 = min(xs), max(xs), min(ys), max(ys)
+        ew = max(ex1 - ex0, 4.0)
+        # --- iris contrast
+        cx, cy = points[idx[0]][0] * w, points[idx[0]][1] * h
+        rad = float(np.mean([np.hypot(points[i][0] * w - cx, points[i][1] * h - cy)
+                             for i in idx[1:]]))
+        val = None
+        if rad >= 2.0:
+            x0, x1 = int(max(0, cx - 2.2 * rad)), int(min(w, cx + 2.2 * rad))
+            y0, y1 = int(max(0, cy - 1.0 * rad)), int(min(h, cy + 1.0 * rad))
+            if x1 - x0 >= 6 and y1 - y0 >= 3:
+                lum = _luma(rgb[y0:y1, x0:x1].astype(np.float32))
+                yy, xx = np.mgrid[y0:y1, x0:x1]
+                dx, dy = np.abs(xx - cx), np.abs(yy - cy)
+                disc = lum[(dx * dx + dy * dy) <= (0.6 * rad) ** 2]
+                side = lum[(dx >= 1.3 * rad) & (dy <= 0.5 * rad)]
+                if disc.size and side.size:
+                    val = float((side.mean() - np.median(disc)) / ref)
+        iris.append(val)
+        # --- frame rim: strong edges in a ring just outside the lids
+        gx0, gx1 = int(max(0, ex0 - 0.5 * ew)), int(min(w, ex1 + 0.5 * ew))
+        gy0, gy1 = int(max(0, ey0 - 0.45 * ew)), int(min(h, ey1 + 0.45 * ew))
+        if gx1 - gx0 >= 8 and gy1 - gy0 >= 6:
+            g = _luma(rgb[gy0:gy1, gx0:gx1].astype(np.float32))
+            mag = np.hypot(np.diff(g, axis=1)[:-1, :], np.diff(g, axis=0)[:, :-1]) / ref
+            yy, xx = np.mgrid[gy0:gy1 - 1, gx0:gx1 - 1]
+            ring = ~((xx >= ex0 - 0.08 * ew) & (xx <= ex1 + 0.08 * ew)
+                     & (yy >= ey0 - 0.08 * ew) & (yy <= ey1 + 0.08 * ew))
+            if ring.sum() >= 20:
+                rims.append(float((mag[ring] >= GLASSES_EDGE).mean()))
+    glasses = min(rims) if len(rims) == 2 else None
+    return (iris[0], iris[1]), glasses
+
+
+def bindi_score(rgb, points, w: int, h: int):
+    """Size of the biggest saturated red blob on the forehead midline, in face-width^2.
+
+    The zone runs from the point between the brows (9) up to the hairline (10), so it
+    follows head roll. Red / magenta only (sat > BINDI_SAT, R > G + BINDI_RED): pimples
+    are less saturated, hair and brows are dark. ``None`` when unmeasurable.
+    """
+    import numpy as np
+
+    if not points or len(points) <= 454 or w <= 0 or h <= 0:
+        return None
+    face_w = abs(points[454][0] - points[234][0]) * w
+    if face_w < 40:
+        return None
+    a = np.array([points[9][0] * w, points[9][1] * h])
+    b = np.array([points[10][0] * w, points[10][1] * h])
+    rad = 0.07 * face_w
+    x0, x1 = int(max(0, min(a[0], b[0]) - rad)), int(min(w, max(a[0], b[0]) + rad))
+    y0, y1 = int(max(0, min(a[1], b[1]) - rad)), int(min(h, max(a[1], b[1]) + rad))
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        return None
+    yy, xx = np.mgrid[y0:y1, x0:x1]
+    ab = b - a
+    t = np.clip(((xx - a[0]) * ab[0] + (yy - a[1]) * ab[1]) / max(float(ab @ ab), 1e-6), 0.0, 1.0)
+    near = np.hypot(xx - (a[0] + t * ab[0]), yy - (a[1] + t * ab[1])) <= rad
+    px = rgb[y0:y1, x0:x1].astype(np.int16)
+    r, g, bl = px[..., 0], px[..., 1], px[..., 2]
+    mx = px.max(axis=2).astype(np.float32)
+    sat = (mx - px.min(axis=2)) / np.maximum(mx, 1.0)
+    hit = (near & (sat > BINDI_SAT) & (r > g + BINDI_RED) & (r >= bl)).astype(np.uint8)
+    if not hit.any():
+        return 0.0
+    import cv2
+    n, _, stats, _ = cv2.connectedComponentsWithStats(hit, connectivity=8)
+    return float(stats[1:, cv2.CC_STAT_AREA].max()) / (face_w * face_w)
+
+
 def eye_gaze(scores) -> tuple[float, float]:
     """(horizontal, vertical) gaze from the eyeLook blendshapes, each -1..1.
 
@@ -561,6 +691,14 @@ def heif_available() -> bool:
     return _HEIF_OK
 
 
+def raw_available() -> bool:
+    try:
+        import rawpy  # noqa: F401
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # --------------------------------------------------------------------------- #
 #  Data model
 # --------------------------------------------------------------------------- #
@@ -596,6 +734,12 @@ class FaceResult:
     gaze_v: float = 0.0                           # +1 = full look up
     occ_left: float | None = None                 # dark share of each eye window
     occ_right: float | None = None
+    iris_left: float | None = None                # iris-disc contrast (pixels), see eye_glasses_iris
+    iris_right: float | None = None
+    glasses: float | None = None                  # frame-edge share round the eyes
+    funny: float = 0.0                            # max tongueOut / cheekPuff / mouthPucker
+    bindi: float | None = None                    # red forehead blob size (face-width^2)
+    bg_closed: bool = False                       # transient: background face that would be closed
     emb: object = field(default=None, repr=False)     # face-recognition vector (128 floats)
     crop: bytes | None = field(default=None, repr=False)  # transient: aligned 112x112 RGB
     person: int | None = field(default=None, repr=False)  # cluster number (not cached)
@@ -613,6 +757,18 @@ class FaceResult:
     @property
     def smiling(self) -> bool:
         return self.smile >= SMILE_MIN
+
+    @property
+    def teeth_showing(self) -> bool:
+        return self.smiling and self.mouth_open >= TEETH_OPEN_MIN
+
+    @property
+    def funny_face(self) -> bool:
+        return self.funny >= FUNNY_MIN
+
+    @property
+    def has_bindi(self) -> bool:
+        return self.bindi is not None and self.bindi >= BINDI_MIN
 
     @property
     def eyes_hidden(self) -> bool:
@@ -677,16 +833,53 @@ class FaceResult:
         ear = self.ear
         return strong and (ear is None or ear <= 0.14)
 
+    @property
+    def has_glasses(self) -> bool:
+        return self.glasses is not None and self.glasses >= GLASSES_MIN
+
+    def _glasses_states(self, left: bool, right: bool) -> tuple[bool, bool, bool]:
+        """Settle a "closed" eye behind spectacles with the pixels.
+
+        Returns (left closed, right closed, unsure). An eye whose iris disc is clearly
+        visible is open; one whose disc is absent stays closed; in between the pixels
+        can't tell, and if no eye is clearly open the face is "can't judge".
+        """
+        kind = []
+        for closed, c in ((left, self.iris_left), (right, self.iris_right)):
+            if not closed or c is None or c < IRIS_UNSURE:
+                kind.append("c" if closed else "o")
+            else:
+                kind.append("o" if c >= IRIS_VISIBLE else "u")
+        if "o" not in kind and "u" in kind:
+            return left, right, True
+        return kind[0] == "c", kind[1] == "c", False
+
     def classify(self, threshold: float, require_both: bool = True,
-                 keep_down: bool = True) -> str:
-        """Set and return ``state``: closed | down | open | ignored.
+                 keep_down: bool = True, background: bool = False) -> str:
+        """Set and return ``state``: closed | down | open | ignored | hidden | background.
 
         ``require_both`` (the default and what the app always uses) means each
         eye is judged on its own and BOTH must be closed; one closed eye is a
-        wink and is reported as such, never flagged.
+        wink and is reported as such, never flagged. ``background``: a person behind
+        / out of focus beside the main subject - not judged, only noted (``bg_closed``).
         """
         left, right = self.eye_states(threshold)
         self.wink = left != right
+        self.bg_closed = False
+        if background and self.override in (None, ""):
+            self.bg_closed = left and right
+            self.wink = False
+            self.state, self.closed, self.sure = "background", False, False
+            return "background"
+        glasses_used = False
+        if self.has_glasses and self.override in (None, ""):
+            left, right, unsure = self._glasses_states(left, right)
+            glasses_used = True
+            self.wink = left != right and not unsure
+            if unsure:
+                self.wink = False
+                self.state, self.closed, self.sure = "hidden", False, False
+                return "hidden"
         if self.eyes_hidden and self.override in (None, ""):
             # sunglasses / hair / a hand: the blendshapes are guesses, don't flag
             self.wink = False
@@ -699,7 +892,8 @@ class FaceResult:
         elif self.override == "closed":
             state = "closed"
         else:
-            raw = (left and right) if require_both else self.is_closed(threshold, False)
+            raw = (left and right) if (require_both or glasses_used) \
+                else self.is_closed(threshold, False)
             if raw:
                 state = "down" if (keep_down and self.looks_down()) else "closed"
             else:
@@ -856,12 +1050,22 @@ class ImageResult:
             out.append(lab)
         if any(f.smiling for f in self.faces):
             out.append("smiling")
+        if any(f.teeth_showing for f in self.faces):
+            out.append("teeth")
         if any(f.mouth_is_open for f in self.faces):
             out.append("mouth open")
+        if any(f.funny_face for f in self.faces):
+            out.append("funny face")
+        if any(f.has_bindi for f in self.faces):
+            out.append("bindi")
         if self.has_wink:
             out.append("wink")
         if self.n_hidden:
             out.append("eyes hidden")
+        if any(f.bg_closed for f in self.faces):
+            out.append("background closed")
+        if any(f.has_glasses for f in self.faces):
+            out.append("glasses")
         if self.n_away:
             out.append("looking away")
         if self.n_cut:
@@ -876,14 +1080,83 @@ class ImageResult:
             out.append("protected")
         return out
 
+    def _background_faces(self) -> set:
+        """ids of faces that are clearly not the subject: much smaller than the biggest
+        face, or smaller and far softer than the sharpest, or too narrow to read.
+        Faces the user overrode or ignored are never background."""
+        cand = [f for f in self.faces if f.override != "ignore"]
+        if len(cand) < 2:
+            return set()
+        big = max(core_area(f.box) for f in cand)
+        top = max((f.sharp for f in cand if f.sharp is not None), default=None)
+        out = set()
+        for f in cand:
+            if f.override in ("open", "closed"):
+                continue
+            a = core_area(f.box)
+            if a >= big:
+                continue
+            narrow = self.width > 0 and (f.box[2] - f.box[0]) * self.width < BG_MIN_PX
+            soft = (f.sharp is not None and top and f.sharp < BG_REL_SHARP * top
+                    and a < BG_REL_AREA_SOFT * big)
+            if a < BG_REL_AREA * big or soft or narrow:
+                out.add(id(f))
+        return out
+
+    def merge_duplicate_faces(self) -> int:
+        """Drop faces that are the same face detected twice (one person is in a photo once).
+
+        Two faces are one when their eyes (nearly) coincide, or their boxes overlap well and their centres
+        are close. The better-scored, larger detection is kept. Returns how many were removed."""
+        faces = self.faces
+        if len(faces) < 2:
+            return 0
+        W, H = (self.width or 1000), (self.height or 1000)
+
+        def geo(f):
+            loops = [e for e in (f.eyes or []) if e]
+            if len(loops) >= 2:
+                cs = [(sum(p[0] for p in e) / len(e) * W, sum(p[1] for p in e) / len(e) * H) for e in loops[:2]]
+                eye = ((cs[0][0] + cs[1][0]) / 2, (cs[0][1] + cs[1][1]) / 2)
+                gap = ((cs[0][0] - cs[1][0]) ** 2 + (cs[0][1] - cs[1][1]) ** 2) ** 0.5
+            else:
+                eye, gap = None, 0.0
+            bw = (f.box[2] - f.box[0]) * W
+            c = ((f.box[0] + f.box[2]) / 2 * W, (f.box[1] + f.box[3]) / 2 * H)
+            return eye, max(gap, 0.3 * bw), c, bw
+
+        def same(a, b):
+            (ea, ga, ca, wa), (eb, gb, cb, wb) = geo(a), geo(b)
+            if ea is not None and eb is not None:
+                d = ((ea[0] - eb[0]) ** 2 + (ea[1] - eb[1]) ** 2) ** 0.5
+                if d < 0.6 * max(ga, gb):
+                    return True
+            dist = ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5
+            return _iou(a.box, b.box) >= 0.25 and dist < 0.3 * max(wa, wb)
+
+        def rank(f):
+            return _area(f.box) * (f.face_score if f.face_score is not None else 0.85)
+
+        kept: list = []
+        for f in sorted(faces, key=rank, reverse=True):
+            if not any(same(f, k) for k in kept):
+                kept.append(f)
+        removed = len(faces) - len(kept)
+        if removed:
+            order = {id(f): i for i, f in enumerate(faces)}
+            self.faces = sorted(kept, key=lambda f: order[id(f)])
+            self.n_people = max(0, self.n_people - removed)
+        return removed
+
     def reclassify(self, threshold: float, require_both: bool = True,
                    keep_down: bool = True) -> None:
         """Re-apply thresholds / overrides using the cached face measurements."""
         if self.verdict in ("error", "unsupported"):
             return
+        bg = self._background_faces() if MAIN_ONLY else set()
         for f in self.faces:
-            f.classify(threshold, require_both, keep_down)
-        live = [f for f in self.faces if f.state != "ignored"]
+            f.classify(threshold, require_both, keep_down, background=id(f) in bg)
+        live = [f for f in self.faces if f.state not in ("ignored", "background")]
         if self.override == "flag":
             self.verdict = "closed"
         elif self.override == "keep" and live:
@@ -1513,6 +1786,14 @@ class EyeEngine:
                 occ_l, occ_r = eye_occlusion(rgb, pts, W, H)
             except Exception:  # noqa: BLE001 - optional measurement
                 occ_l = occ_r = None
+            try:
+                (iris_l, iris_r), glasses = eye_glasses_iris(rgb, pts, W, H)
+            except Exception:  # noqa: BLE001 - optional measurement
+                iris_l = iris_r = glasses = None
+            try:
+                bindi = bindi_score(rgb, pts, W, H)
+            except Exception:  # noqa: BLE001 - optional measurement
+                bindi = None
             crop = None
             if self.embed_faces:
                 try:
@@ -1542,6 +1823,8 @@ class EyeEngine:
                        if min((box[2] - box[0]) * W, (box[3] - box[1]) * H) >= FACE_MIN_PX
                        else None),
                 gaze_h=gaze_h, gaze_v=gaze_v, occ_left=occ_l, occ_right=occ_r,
+                iris_left=iris_l, iris_right=iris_r, glasses=glasses, bindi=bindi,
+                funny=max(sc("tongueOut"), sc("cheekPuff"), sc("mouthPucker")),
                 crop=crop)
             res.faces.append(fr)
             biggest = max(biggest, area)
@@ -1558,6 +1841,7 @@ class EyeEngine:
                 res.bg_sharp = None
 
         res.verdict = "open"
+        res.merge_duplicate_faces()
         res.reclassify(self.threshold, self.require_both, self.keep_down)
         return res
 
@@ -1565,6 +1849,53 @@ class EyeEngine:
 # --------------------------------------------------------------------------- #
 #  Image loading helpers
 # --------------------------------------------------------------------------- #
+
+_RAW_FLIP = {3: 180, 5: 90, 6: 270}      # LibRaw flip code -> PIL rotate() degrees (CCW)
+
+
+def _load_raw(path: Path, max_dim: int | None):
+    """Decode a camera RAW (Canon CR2/CR3, Nikon NEF, Sony ARW, DNG ...) to an upright PIL image.
+
+    The full-size JPEG that cameras embed is used when it is big enough for ``max_dim`` (fast,
+    and it carries the camera's own colour rendering); otherwise the sensor data is developed
+    with LibRaw (half size, camera white balance), which is still much quicker than a full demosaic.
+    """
+    import io
+
+    import rawpy
+    from PIL import Image
+
+    with rawpy.imread(str(path)) as raw:
+        sz = raw.sizes
+        flip = sz.flip
+        upright = (sz.iheight, sz.iwidth) if flip in (5, 6) else (sz.iwidth, sz.iheight)
+        im = None
+        try:
+            th = raw.extract_thumb()
+            if th.format == rawpy.ThumbFormat.JPEG:
+                t = Image.open(io.BytesIO(th.data))
+                if max(t.size) >= min(max_dim or 2048, 2048) and max(t.size) * 2 >= max(upright):
+                    # embedded previews are not always rotated; trust EXIF if present, else LibRaw's flip
+                    exif_rot = t.getexif().get(0x0112, 1) != 1
+                    if exif_rot:
+                        from PIL import ImageOps
+                        im = ImageOps.exif_transpose(t).convert("RGB")
+                    else:
+                        im = t.convert("RGB")
+                        if (im.width > im.height) != (upright[0] > upright[1]) and flip in _RAW_FLIP:
+                            im = im.rotate(_RAW_FLIP[flip], expand=True)
+            elif th.format == rawpy.ThumbFormat.BITMAP:
+                im = Image.fromarray(th.data)
+        except Exception:  # noqa: BLE001 - no/unsupported preview: develop the sensor data
+            im = None
+        if im is None:
+            small = bool(max_dim) and max_dim * 2 <= max(upright)
+            arr = raw.postprocess(use_camera_wb=True, half_size=small, no_auto_bright=False,
+                                  output_bps=8)           # applies the flip itself
+            im = Image.fromarray(arr)
+    im._orig_size = upright
+    return im
+
 
 def load_image(path: str | Path, max_dim: int | None = None):
     """Decode an image to an EXIF-corrected PIL RGB image.
@@ -1576,6 +1907,15 @@ def load_image(path: str | Path, max_dim: int | None = None):
     from PIL import Image, ImageOps
 
     Image.MAX_IMAGE_PIXELS = 600_000_000   # allow big panoramas; still bounded
+    if Path(path).suffix.lower() in RAW_EXTS:
+        im = _load_raw(Path(path), max_dim)
+        orig = im._orig_size
+        if max_dim and max(im.size) > max_dim:
+            s = max_dim / max(im.size)
+            im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))),
+                           Image.BILINEAR)
+        im._orig_size = orig
+        return im
     im = Image.open(path)
     orig = im.size
     try:
@@ -1641,16 +1981,24 @@ def iter_images(folder: Path, recursive: bool, skip_dirs=()):
     folder, so already-sorted photos aren't scanned again).
     """
     skip = {str(n).lower() for n in skip_dirs if n} | {"$recycle.bin"}
+
+    def wanted(names):
+        """Image names in one folder; a RAW with a same-name JPG/PNG/... beside it is the
+        companion of that photo (not a second photo), so only the non-RAW one is scanned."""
+        names = [n for n in names if Path(n).suffix.lower() in IMAGE_EXTS]
+        plain = {Path(n).stem.lower() for n in names if Path(n).suffix.lower() not in RAW_EXTS}
+        return [n for n in names
+                if Path(n).suffix.lower() not in RAW_EXTS or Path(n).stem.lower() not in plain]
+
     if not recursive:
-        for p in sorted(folder.iterdir()):
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTS:
-                yield p
+        files = sorted(p.name for p in folder.iterdir() if p.is_file())
+        for name in wanted(files):
+            yield folder / name
         return
     for dirpath, dirnames, filenames in os.walk(folder):
         dirnames[:] = sorted(d for d in dirnames if d.lower() not in skip)
-        for name in sorted(filenames):
-            if Path(name).suffix.lower() in IMAGE_EXTS:
-                yield Path(dirpath) / name
+        for name in wanted(sorted(filenames)):
+            yield Path(dirpath) / name
 
 
 def recycle(paths) -> tuple[int, list[str]]:
@@ -2064,6 +2412,8 @@ def result_to_dict(r) -> dict:
             "ro": f.roll, "sm": f.smile, "mo": f.mouth_open, "sh": f.sharp,
             "sq": f.squint, "gh": round(f.gaze_h, 3), "gv": round(f.gaze_v, 3),
             "ol": _r4(f.occ_left), "or": _r4(f.occ_right),
+            "il": _r4(f.iris_left), "ir": _r4(f.iris_right), "gl": _r4(f.glasses),
+            "fu": round(f.funny, 3), "bi": _r4(f.bindi),
             "em": _pack_emb(f.emb)})
     return {"v": r.verdict, "faces": faces, "err": r.error,
             "np": r.n_people, "nb": r.n_bodies,
@@ -2094,7 +2444,10 @@ def result_from_dict(path, d: dict):
             sharp=f.get("sh"), squint=f.get("sq", 0.0),
             gaze_h=f.get("gh", 0.0), gaze_v=f.get("gv", 0.0),
             occ_left=f.get("ol"), occ_right=f.get("or"),
+            iris_left=f.get("il"), iris_right=f.get("ir"), glasses=f.get("gl"),
+            funny=f.get("fu", 0.0), bindi=f.get("bi"),
             emb=_unpack_emb(f.get("em"))))
+    r.merge_duplicate_faces()               # older scans may hold the same face twice
     r.from_cache = True
     return r
 

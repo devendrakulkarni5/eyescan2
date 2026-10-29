@@ -37,6 +37,7 @@ MAX_YAW = 50.0           # profile faces don't embed reliably
 SAME_PERSON = 0.42       # cosine similarity: same person at or above (SFace paper: 0.363)
 MERGE_PERSON = 0.50      # clusters whose centres are this close are merged
 MATCH_MIN = 0.36         # photo-to-photo match of one person inside a burst
+FLIP_TTA = True          # embed the face and its mirror image and average: steadier on turned faces
 
 
 def available(path=None) -> bool:
@@ -144,11 +145,19 @@ class FaceEmbedder:
         if not crop or len(crop) != EMBED_SIZE * EMBED_SIZE * 3:
             return None
         x = np.frombuffer(crop, np.uint8).reshape(EMBED_SIZE, EMBED_SIZE, 3)
-        x = x.transpose(2, 0, 1)[None].astype(np.float32)       # RGB, 0..255, NCHW
-        v = np.asarray(self.model.run({self._in: x})[0], np.float32).reshape(-1)
-        n = float(np.linalg.norm(v))
+        views = [x, x[:, ::-1]] if FLIP_TTA else [x]
+        total = None
+        for img in views:
+            a = np.ascontiguousarray(img.transpose(2, 0, 1)[None]).astype(np.float32)   # RGB, 0..255, NCHW
+            v = np.asarray(self.model.run({self._in: a})[0], np.float32).reshape(-1)
+            n = float(np.linalg.norm(v))
+            if n > 1e-6:
+                total = v / n if total is None else total + v / n
         self.count += 1
-        return v / n if n > 1e-6 else None
+        if total is None:
+            return None
+        n = float(np.linalg.norm(total))
+        return total / n if n > 1e-6 else None
 
     def embed_result(self, res) -> int:
         """Embed every face of an ImageResult that carries a crop; returns how many."""
@@ -376,7 +385,9 @@ def cluster_people(results, same: float = SAME_PERSON, merge: float = MERGE_PERS
     Q = [face_quality(r, f) for r, f in items]
     order = sorted(range(len(items)), key=lambda i: -Q[i])
 
-    cl: list[dict] = []     # {"m": [idx], "sum": vec, "ex": [idx]}
+    photo = [id(r) for r, _f in items]      # two faces of one photo are two different people
+
+    cl: list[dict] = []     # {"m": [idx], "sum": vec, "ex": [idx], "ph": {photo ids}}
 
     def centre(c):
         return _unit(c["sum"])
@@ -384,26 +395,39 @@ def cluster_people(results, same: float = SAME_PERSON, merge: float = MERGE_PERS
     def exm(c):
         return X[c["ex"]]
 
+    def make(members):
+        s = sum(Q[i] * X[i] for i in members)
+        return {"m": list(members), "sum": s, "ex": _pick_exemplars(members, X, Q),
+                "ph": {photo[i] for i in members}}
+
+    def best_cluster(i):
+        best, bs = -1, -1.0
+        for j, c in enumerate(cl):
+            if photo[i] in c["ph"]:
+                continue
+            s = person_score(X[i], centre(c), exm(c))
+            if s > bs:
+                best, bs = j, s
+        return best, bs
+
     low: list[int] = []
     for i in order:
         if Q[i] < Q_SEED:
             low.append(i)
             continue
-        best, bs = -1, -1.0
-        for j, c in enumerate(cl):
-            s = person_score(X[i], centre(c), exm(c))
-            if s > bs:
-                best, bs = j, s
+        best, bs = best_cluster(i)
         if best >= 0 and bs >= same:
             c = cl[best]
             c["m"].append(i)
+            c["ph"].add(photo[i])
             c["sum"] = c["sum"] + Q[i] * X[i]
             if len(c["ex"]) < EXEMPLARS and float(np.max(X[c["ex"]] @ X[i])) < EXEMPLAR_DUP:
                 c["ex"].append(i)
         else:
-            cl.append({"m": [i], "sum": Q[i] * X[i].copy(), "ex": [i]})
+            cl.append({"m": [i], "sum": Q[i] * X[i].copy(), "ex": [i], "ph": {photo[i]}})
 
-    # merge people that are the same person (average linkage), strongest link first
+    # merge people that are the same person (average linkage), strongest link first;
+    # never when they appear together in a photo (they cannot be one person)
     cache: dict = {}
 
     def link(a, b):
@@ -416,27 +440,56 @@ def cluster_people(results, same: float = SAME_PERSON, merge: float = MERGE_PERS
         best, pair = merge, None
         for a in range(len(cl)):
             for b in range(a + 1, len(cl)):
+                if cl[a]["ph"] & cl[b]["ph"]:
+                    continue
                 s = link(a, b)
                 if s >= best:
                     best, pair = s, (a, b)
         if pair is None:
             break
         a, b = pair
-        ca, cb = cl[a], cl[b]
-        members = ca["m"] + cb["m"]
-        cl[a] = {"m": members, "sum": ca["sum"] + cb["sum"], "ex": _pick_exemplars(members, X, Q)}
+        cl[a] = make(cl[a]["m"] + cl[b]["m"])
         del cl[b]
         cache.clear()
 
-    # low-quality faces: attach only on a clear match, never create a person
-    for i in low:
-        best, bs = -1, -1.0
-        for j, c in enumerate(cl):
-            s = person_score(X[i], centre(c), exm(c))
-            if s > bs:
-                best, bs = j, s
-        if best >= 0 and bs >= same + 0.04:
-            cl[best]["m"].append(i)
+    # refinement: with settled people, re-place every face (order no longer matters), one slot per
+    # person per photo, and let faces too poor to seed a person join only on a clear match
+    for _round in range(2):
+        if not cl:
+            break
+        slots: dict[int, list[int]] = {}
+        for i in range(len(items)):
+            slots.setdefault(photo[i], []).append(i)
+        members: list[list[int]] = [[] for _ in cl]
+        cents = [centre(c) for c in cl]
+        exs = [exm(c) for c in cl]
+        for faces in slots.values():
+            cand = []
+            for i in faces:
+                need = same if Q[i] >= Q_SEED else same + 0.04
+                for j in range(len(cl)):
+                    s = person_score(X[i], cents[j], exs[j])
+                    if s >= need:
+                        cand.append((s, i, j))
+            cand.sort(reverse=True)
+            done_f, done_p = set(), set()
+            for s, i, j in cand:
+                if i not in done_f and j not in done_p:
+                    members[j].append(i)
+                    done_f.add(i)
+                    done_p.add(j)
+            # a good face that fits nobody keeps its previous person rather than vanishing
+            for i in faces:
+                if i not in done_f and Q[i] >= Q_SEED:
+                    for j, c in enumerate(cl):
+                        if i in c["m"] and j not in done_p:
+                            members[j].append(i)
+                            done_p.add(j)
+                            break
+        moved = any(set(m) != set(c["m"]) for m, c in zip(members, cl))
+        cl = [make(m) for m in members if m]
+        if not moved:
+            break
 
     people = []
     for c in cl:

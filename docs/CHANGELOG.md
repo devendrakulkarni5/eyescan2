@@ -1,6 +1,29 @@
-# Changelog — EyeScan 2
+# Changelog — Keeper (formerly EyeScan 2)
 
 (v1 history: `CHANGELOG-v1.md`.)
+
+## Unreleased
+- Scans start on **All photos** and switch to a chosen tab (default Closed eyes) when finished; Settings -> Scanning -> "Tab after scan finishes" changes it or turns it off.
+- Theme toggle uses one Lucide `sun-moon` icon; visible keyboard focus ring on buttons and menu items.
+- **Renamed to Keeper** (was EyeScan 2): new app name, window title, `Keeper.exe`, `Keeper-Setup-<version>.exe`, installer shortcuts.
+  Existing installs upgrade in place (same installer AppId); the data folder `%LOCALAPPDATA%\EyeScan2`, `eyescan2.db`, the
+  `eyescan_*` engine modules and the releases repo name are unchanged on purpose so settings, database and updates keep working.
+
+
+## 2.3.0
+- Camera RAW support (Canon CR2/CR3/CRW, Nikon NEF/NRW, Sony ARW/SRF/SR2, DNG, Fuji RAF, Olympus ORF, Panasonic RW2, Pentax PEF
+  and more) via rawpy/LibRaw: scanned, previewed and reported like any photo. The camera's embedded full-size JPEG is used
+  when large enough (fast), otherwise the sensor data is developed at half size. A RAW with a same-name JPG beside it is
+  treated as that photo's companion and is not scanned twice.
+- **Main subjects only** (Settings, on by default): closed eyes on people who are much smaller than the main subject, softer
+  and smaller, or too narrow to read are no longer flagged; the photo is tagged "background closed" instead.
+- **Glasses**: a frame-edge detector (tag "glasses") plus an iris-disc pixel check. With glasses on, a "closed" reading is
+  overruled when the iris is clearly visible and becomes "can't judge" when the pixels are undecided. Cache schema 10
+  (rescan needed for the new measurements). Thresholds `GLASSES_*`, `IRIS_*`, `BG_*` in `eyescan_core.py` are uncalibrated
+  on real shoots - tune them on a few event folders.
+- New **Look** filters in the left rail: Teeth showing, Funny face (tongue out / cheek puff / pucker), Glasses, Eyes hidden,
+  Bindi (saturated red blob on the forehead midline, from the portrait-editor rules). Photos carry the matching tags.
+  Cache schema 11. `TEETH_OPEN_MIN`, `FUNNY_MIN`, `BINDI_*` are uncalibrated.
 
 ## 2.2.1
 - Engine version now tracks the app version (`--doctor` and report footers showed 1.0.1); the release script bumps it too.

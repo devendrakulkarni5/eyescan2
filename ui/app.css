@@ -8,6 +8,12 @@
   --shadow:0 10px 30px rgba(15,23,42,.18);--radius:10px;
   font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;font-size:14px;
 }
+/* Scrollbars in the brand sage (WebView2 / Chromium) */
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--sage);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--sage-d);background-clip:padding-box}
+::-webkit-scrollbar-thumb:active{background:var(--accent-d);background-clip:padding-box}
 :root[data-theme=dark]{
   --bg:#0F172A;--card:#1E293B;--canvas:#0B1220;--line:#334155;--text:#F1F5F9;--text2:#CBD5E1;--muted:#94A3B8;
   --hover:#273449;--select:#33463F;--on-accent:#0F172A;--shadow:0 10px 30px rgba(0,0,0,.5);
@@ -248,3 +254,6 @@ svg{flex:none}.ri{display:inline-flex;width:18px;height:18px}.ri svg,.rail .item
 .plus{color:var(--muted);font-size:18px;padding:0 4px}.simbadge{margin-left:auto;background:var(--sun-l);color:var(--text);border-radius:99px;padding:2px 10px;font-weight:600;font-size:12px}
 .mergerow{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}.mg{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
 .mg img{width:72px;height:72px}
+
+button:focus-visible,.rail .item:focus-visible,.mi:focus-visible{outline:2px solid var(--sage);outline-offset:1px}
+#theme-btn{display:inline-flex;align-items:center}

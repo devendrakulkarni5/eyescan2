@@ -1,7 +1,7 @@
-"""EyeScan 2 - desktop entry point (Windows, WebView2 via pywebview).
+"""Keeper - desktop entry point (Windows, WebView2 via pywebview).
 
 No arguments opens the window. Any CLI option (``--scan``, ``--doctor``, ...) runs the
-command-line tool in ``cli.py`` instead, so ``EyeScan2.exe --scan "D:\\Photos"`` works.
+command-line tool in ``cli.py`` instead, so ``Keeper.exe --scan "D:\\Photos"`` works.
 
 The window remembers its size, position, the screen it was on and whether it was maximized
 (``window.json`` in the app data folder). If that screen is gone the window opens centred on the
@@ -92,7 +92,7 @@ class WindowMemory:
             pass
 
 
-APP_ID = "DEeV.EyeScan2"
+APP_ID = "DEeV.Keeper"
 
 
 def set_app_id() -> None:
@@ -135,7 +135,7 @@ def set_window_icon(title: str, ico: Path) -> bool:
 
 
 def set_title_icon(window, ico: Path, memory: WindowMemory) -> None:
-    """Give the window the EyeScan icon and restore its screen. Never fatal."""
+    """Give the window the Keeper icon and restore its screen. Never fatal."""
     from bridge import APP_NAME
     set_window_icon(APP_NAME, ico)
     memory.place_on_screen()
@@ -163,7 +163,7 @@ def main() -> int:
     bridge._window.events.moved += mem.changed
     bridge._window.events.resized += mem.changed
     bridge._window.events.closing += mem.save
-    webview.start(set_title_icon, (bridge._window, ui / "assets" / "EyeScan.ico", mem),
+    webview.start(set_title_icon, (bridge._window, ui / "assets" / "Keeper.ico", mem),
                   debug="--debug" in sys.argv)
     return 0
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EyeScan 2 - command line. app.py hands any CLI option to main() here.
+Keeper - command line. app.py hands any CLI option to main() here.
 
     python app.py --scan "D:\\Photos" --threshold 0.5 --csv report.csv
     python app.py --scan "D:\\Photos" --move
@@ -129,7 +129,7 @@ def cli(args: argparse.Namespace) -> int:
         import eyescan_report as report
 
         pages = report.make_contact_sheets(
-            everything, args.sheet, title=f"EyeScan - {folder.name}",
+            everything, args.sheet, title=f"Keeper - {folder.name}",
             mode=args.sheet_mode, ratio=args.sheet_ratio,
             long_side=args.sheet_long, only=args.sheet_only)
         print(f"{len(pages)} contact sheet page(s) written to {args.sheet}")
@@ -184,7 +184,7 @@ def run_doctor(dest: str | None) -> int:
     def add(key, val):
         lines.append(f"{key}: {val}")
 
-    add("EyeScan", core.__version__)
+    add("Keeper", core.__version__)
     add("copyright", core.CREDIT_LINE)
     add("frozen", getattr(sys, "frozen", False))
     add("python", sys.version.replace("\n", " "))
@@ -203,6 +203,7 @@ def run_doctor(dest: str | None) -> int:
     add("face-recognition model", core.find_model("face_recognition_sface_2021dec.onnx",
                                                   5_000_000) or "NOT FOUND")
     add("heif", core.heif_available())
+    add("raw", core.raw_available())
     try:
         import eyescan_gpu as gpu
 
@@ -236,7 +237,7 @@ def run_doctor(dest: str | None) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Find photos with closed eyes.")
     ap.add_argument("--version", action="version",
-                    version=f"EyeScan {core.__version__}" + chr(10) + core.CREDIT_LINE)
+                    version=f"Keeper {core.__version__}" + chr(10) + core.CREDIT_LINE)
     ap.add_argument("--scan", help="folder to scan (omit to open the window)")
     ap.add_argument("--threshold", type=float, default=core.DEFAULT_THRESHOLD,
                     help="blink score >= this counts as closed (default 0.5)")
@@ -314,14 +315,14 @@ def main() -> int:
 
 
 def log_crash(text: str) -> Path | None:
-    """Append a traceback to crash.log in the EyeScan user-data folder."""
+    """Append a traceback to crash.log in the Keeper user-data folder."""
     import time
 
     try:
         path = core.user_data_dir() / "crash.log"
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')}  "
-                     f"EyeScan {core.__version__} =====\n{text}\n")
+                     f"Keeper {core.__version__} =====\n{text}\n")
         return path
     except Exception:  # noqa: BLE001
         return None

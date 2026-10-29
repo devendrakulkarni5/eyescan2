@@ -1,10 +1,10 @@
-# EyeScan 2
+# Keeper
 
-Windows desktop app that scans a folder of photos and finds the ones where someone has their **eyes closed**.
+Windows desktop app for photographers: scans a folder of photos and culls the keepers, finding the ones where someone has their **eyes closed**.
 It also spots duplicates, blurry or misfocused shots, winks, smiles, people (and lets you name them) and animals.
 Everything runs **offline** on your PC. Photos never leave it.
 
-EyeScan 2 is the successor to the v1 Tkinter app. It keeps the proven v1 detection engine (`engine/`) behind a modern
+Keeper (formerly EyeScan 2) is the successor to the EyeScan v1 Tkinter app. It keeps the proven v1 detection engine (`engine/`) behind a modern
 web UI (`ui/`) hosted by pywebview (WebView2).
 
 ## Features
@@ -19,7 +19,7 @@ web UI (`ui/`) hosted by pywebview (WebView2).
 - Built-in update check against GitHub Releases (can be turned off in Settings)
 
 ## Install (users)
-Download `EyeScan2-Setup-<version>.exe` from the
+Download `Keeper-Setup-<version>.exe` from the
 [Releases](https://github.com/devendrakulkarni5/eyescan2-releases/releases) page and run it. Installing a newer
 version over an old one keeps your settings and database.
 
@@ -27,7 +27,7 @@ version over an old one keeps your settings and database.
 Needs Python 3.13 on Windows.
 
 ```bat
-Run-EyeScan2.bat                     :: creates .venv on first run, then starts the app
+Run-Keeper.bat                     :: creates .venv on first run, then starts the app
 .venv\Scripts\python.exe app.py --debug
 ```
 

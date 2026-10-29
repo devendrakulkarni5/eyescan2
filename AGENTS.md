@@ -1,14 +1,16 @@
-# EyeScan 2 — project context (for AI agents & developers)
+# Keeper (formerly EyeScan 2) — project context (for AI agents & developers)
 
-Windows desktop app (v2.0.0) that scans a folder of photos and finds / sorts the ones where a person
+Windows desktop app (display name **Keeper**, renamed from EyeScan 2; photographer-oriented) that scans a folder of photos and finds / sorts the ones where a person
 has their **eyes closed**, plus duplicates, blur/misfocus, winks, people and animals. Successor to
 `S:\HTML\EyeScan` (v1, Tkinter), which stays as the reference. All offline.
+
+**Rename note:** user-facing name, exe (`Keeper.exe`), installer (`Keeper-Setup-<ver>.exe`), spec and icon are Keeper. Internals deliberately keep the old names so existing installs/data keep working: data folder `%LOCALAPPDATA%\EyeScan2` (+ `EyeScan` for shared settings), `eyescan2.db`, `eyescan_*` engine modules, installer `AppId`, `GITHUB_REPO`.
 
 ## Architecture
 
 ```
 ui/ (HTML/CSS/JS, no build step)  <-- pywebview js_api -->  bridge.py (Bridge)  -->  engine/ (EyeScan v1 engine, unchanged)
-app.py = entry (window) · cli.py = command line (any --option routes here) · EyeScan2.spec = PyInstaller
+app.py = entry (window) · cli.py = command line (any --option routes here) · Keeper.spec = PyInstaller
 ```
 
 - `engine/` is a **copy** of v1's `eyescan_core/db/gpu/people/report` + `model/`. Calibration lives
@@ -51,14 +53,14 @@ app.py = entry (window) · cli.py = command line (any --option routes here) · E
 - Bump `core.SCHEMA_VERSION` (engine) if a cached measurement changes meaning.
 - Never open a browser to verify (user rule). UI is verified headless with jsdom (`tests/ui_smoke.js`)
   and by the user manually.
-- Frozen exe is `--windowed` (no console): verify with `EyeScan2.exe --doctor <scratch file>`
+- Frozen exe is `--windowed` (no console): verify with `Keeper.exe --doctor <scratch file>`
   (**overwrites** that file — never pass a photo). `--scan ... --csv <file>` works in the exe too.
 - Do not exclude `matplotlib` / `cv2` / `sounddevice` from the spec: mediapipe imports them.
 
 ## Commands
 
 ```bat
-Run-EyeScan2.bat                                   :: run from source
+Run-Keeper.bat                                   :: run from source
 .venv\Scripts\python.exe tests\selftest.py         :: 215 engine tests
 .venv\Scripts\python.exe tests\window_memory_test.py :: window geometry persistence
 .venv\Scripts\python.exe tests\bridge_names_test.py <folder-of-copies>   :: image server, names, db move/clear
