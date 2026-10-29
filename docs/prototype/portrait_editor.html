@@ -1,0 +1,1597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EyeScan Portrait Studio (prototype)</title>
+<style>
+:root{--bg:#121617;--panel:#1b2123;--panel2:#232b2e;--line:#2f3a3d;--fg:#e7eeec;--mut:#8ea4a0;--acc:#5fc79a;--acc2:#e8b04a;--bad:#e5737a}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 "Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:15px;margin:0;font-weight:600}
+header h1 span{color:var(--acc)}
+header .sp{flex:1}
+.badge{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:99px;padding:2px 10px}
+button,.btn{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer}
+button:hover,.btn:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);color:#0c1a14;border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+main{flex:1;display:grid;grid-template-columns:72px 1fr 340px;min-height:0}
+.rail{background:var(--panel);border-right:1px solid var(--line);padding:8px;display:flex;flex-direction:column;gap:6px;overflow:auto}
+.rail button{padding:8px 0;text-align:center;font-size:12px;line-height:1.2}
+.rail button b{display:block;font-size:18px;font-weight:400}
+.rail button.on{border-color:var(--acc);background:#1f3a31;color:var(--acc)}
+.rail hr{border:0;border-top:1px solid var(--line);width:100%;margin:2px 0}
+.stagewrap{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column}
+.stage{flex:1;overflow:auto;padding:12px;display:flex;background:
+  repeating-conic-gradient(#171d1f 0% 25%,#141a1b 0% 50%) 50%/24px 24px}
+.stage .holder{position:relative;margin:auto;line-height:0}
+canvas#cv{display:block;touch-action:none;cursor:grab;box-shadow:0 6px 30px #0008}
+.ring{position:absolute;pointer-events:none;border:1.5px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #000a;display:none;transform:translate(-50%,-50%)}
+.ring.src{border-style:dashed;border-color:var(--acc2)}
+.drop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--mut);text-align:center;padding:24px}
+.drop.hide{display:none}
+.drop.over{outline:2px dashed var(--acc);outline-offset:-12px}
+.bar{display:flex;gap:8px;align-items:center;padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--mut);flex-wrap:wrap}
+.bar .sp{flex:1}
+.bar{flex-wrap:nowrap;gap:6px;overflow:hidden}
+.bar button{padding:4px 9px;font-size:12px;white-space:nowrap}
+.bar #status{flex:1 1 60px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .sp{display:none}
+#zoomSlider{width:90px!important}
+@media (max-width:900px){.bar{flex-wrap:wrap}}
+aside{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ptop{padding:12px 14px 12px;border-bottom:1px solid var(--line)}
+.ptop .lbl{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+.ptop .lbl button{padding:2px 9px;font-size:11px;letter-spacing:0;text-transform:none}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{padding:4px 12px;font-size:12px;border-radius:99px}
+.chips button.on{border-color:var(--acc);background:#1f3a31;color:var(--acc)}
+.ptabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel)}
+.ptabs button{flex:1;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:10px 4px 9px;color:var(--mut);font-size:12.5px}
+.ptabs button:hover{color:var(--fg)}
+.ptabs button.on{color:var(--acc);border-bottom-color:var(--acc)}
+.panes{flex:1;overflow:auto;padding:12px 14px 28px;min-height:0}
+.pane{display:none}
+.pane.on{display:block}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px 6px;margin-bottom:12px}
+.card>h3{margin:0 0 6px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
+.card>h3 small{margin-left:auto;font-weight:400;color:var(--mut)}
+.srow{margin:9px 0 10px}
+.shead{display:flex;align-items:center;gap:6px}
+.shead label{flex:1;font-size:12.5px;min-width:0}
+.snum{width:52px;background:var(--bg);color:var(--acc);border:1px solid var(--line);border-radius:6px;padding:2px 5px;font:inherit;font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.snum:focus{outline:none;border-color:var(--acc)}
+.srst{visibility:hidden;padding:0 6px;font-size:13px;line-height:1.3;border-radius:5px;background:none;border-color:transparent;color:var(--mut)}
+.srow.mod .srst{visibility:visible}
+.srow.mod .shead label::after{content:" \25CF";color:var(--acc2);font-size:8px;vertical-align:middle}
+.srow input[type=range]{width:100%;accent-color:var(--acc);margin:3px 0 0;display:block}
+.sw{display:flex;align-items:flex-start;gap:10px;margin:9px 0;font-size:12.5px;cursor:pointer;line-height:1.3}
+.sw input{appearance:none;-webkit-appearance:none;width:30px;height:17px;border-radius:99px;background:#3a484c;position:relative;flex:none;cursor:pointer;transition:background .15s;margin:1px 0 0}
+.sw input::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#cfe0dc;transition:left .15s}
+.sw input:checked{background:var(--acc)}
+.sw input:checked::after{left:15px;background:#0c1a14}
+.sw small{display:block;color:var(--mut);font-size:11px;margin-top:1px}
+.det{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px}
+.pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--mut)}
+.pill.ok{color:var(--acc);border-color:#2c5c4a}
+.pill.warn{color:var(--acc2);border-color:#6b5420}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;margin:6px 0}
+.row label{font-size:12.5px}
+.toolname{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px}
+.toolname b{font-size:18px;font-weight:400;color:var(--acc)}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:12px;margin:2px 0 8px}
+.keys span:nth-child(odd){white-space:nowrap}
+.full{width:100%}
+.note{font-size:11.5px;color:var(--mut);margin:6px 0}
+progress{width:100%;height:8px;accent-color:var(--acc)}
+kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
+/* custom scrollbars (Chrome/Edge/Safari via ::-webkit-scrollbar, Firefox via scrollbar-color) */
+:root{--sb:#0f1314;--thumb:#34444a}
+aside,.rail{--sb:var(--panel)}
+*::-webkit-scrollbar{width:12px;height:12px}
+*::-webkit-scrollbar-track{background:var(--sb)}
+*::-webkit-scrollbar-thumb{background:var(--thumb);border-radius:8px;border:3px solid var(--sb)}
+*::-webkit-scrollbar-thumb:hover{background:var(--acc)}
+*::-webkit-scrollbar-thumb:active{background:#8ae8c0}
+*::-webkit-scrollbar-corner{background:var(--sb)}
+@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:var(--thumb) var(--sb)}}
+select{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font:inherit;font-size:12px}
+@media (max-width:900px){
+  main{grid-template-columns:1fr;grid-template-rows:auto 60vh auto}
+  .rail{flex-direction:row;border-right:0;border-bottom:1px solid var(--line)}
+  .rail button{flex:1}
+  .rail hr{display:none}
+  aside{border-left:0;border-top:1px solid var(--line);max-height:80vh}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>EyeScan</span> Portrait Studio <span class="badge">prototype</span></h1>
+  <span class="badge">photos never leave your device · face model loads once from a CDN</span>
+  <span class="sp"></span>
+  <label class="badge" style="display:flex;gap:6px;align-items:center" title="Long edge of the working image. Larger = sharper but slower">Working size
+    <select id="resEdit"><option value="1920" selected>1920 px</option><option value="2560">2560 px</option><option value="3840">3840 px (slow)</option></select></label>
+  <label class="btn">Open photo<input id="file" type="file" accept="image/*" hidden></label>
+  <button id="btnExport" disabled>Export JPG</button>
+</header>
+
+<main>
+  <div class="rail" id="rail"></div>
+
+  <section class="stagewrap">
+    <div class="stage" id="stage">
+      <div class="holder" id="holder">
+        <canvas id="cv" width="10" height="10"></canvas>
+        <div class="ring" id="ring"></div>
+        <div class="ring src" id="srcRing"></div>
+      </div>
+      <div class="drop" id="drop">
+        <div style="font-size:38px">🙂</div>
+        <div><b>Drop a portrait here</b><br>or use “Open photo”. JPG / PNG / WebP (HEIC and RAW are handled by the Python app).</div>
+      </div>
+    </div>
+    <div class="bar">
+      <span id="status">No image</span>
+      <span class="sp"></span>
+      <button id="btnCompare" disabled title="Hold to see the original (or hold \)">Hold: Before</button>
+      <button id="btnUndo" disabled>Undo stroke</button>
+      <button id="btnClear" disabled>Clear strokes</button>
+      <input type="range" id="zoomSlider" min="5" max="800" value="100" disabled title="Zoom (or use the mouse wheel)" style="width:120px;accent-color:var(--acc)"><span id="zoomPct" style="min-width:38px">100%</span>
+      <button id="zFit" disabled>Fit</button><button id="z1" disabled>100%</button><button id="z2" disabled>200%</button>
+    </div>
+  </section>
+
+  <aside>
+    <div class="ptop">
+      <div class="lbl"><span>Presets</span><button id="btnResetAll" title="Reset every setting to its default">Reset all</button></div>
+      <div class="chips" id="presets"></div>
+    </div>
+    <div class="ptabs" role="tablist">
+      <button data-tab="adjust" class="on">Adjust</button>
+      <button data-tab="auto">Auto</button>
+      <button data-tab="brush">Brush</button>
+      <button data-tab="export">Export</button>
+    </div>
+    <div class="panes">
+
+      <div class="pane on" data-pane="adjust">
+        <div class="card">
+          <h3>Skin smoothing</h3>
+          <div id="gSmooth"></div>
+          <label class="sw"><input type="checkbox" id="skinOnly" checked><span>Skin only<small>Leave hair, eyes, lips and clothes sharp</small></span></label>
+          <label class="sw"><input type="checkbox" id="keepFeatures" checked><span>Protect eyes, brows &amp; mouth<small>Masked out of smoothing and glow, even if skin-coloured</small></span></label>
+          <label class="sw"><input type="checkbox" id="useSeg" checked><span>AI skin segmentation<small>Hair, clothes and jewellery excluded</small></span></label>
+          <label class="sw"><input type="checkbox" id="showMask"><span>Show skin mask<small>Red tint = what gets smoothed</small></span></label>
+        </div>
+        <div class="card">
+          <h3>Tone</h3>
+          <div id="gTone"></div>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="auto">
+        <div class="card">
+          <h3>Detection</h3>
+          <div class="det" id="det"></div>
+          <label class="sw"><input type="checkbox" id="showDetect"><span>Show detections<small>Face edge, healed spots and protected marks on the photo</small></span></label>
+        </div>
+        <div class="card">
+          <h3>Auto-heal</h3>
+          <div id="gHeal"></div>
+        </div>
+        <div class="card">
+          <h3>Auto dodge &amp; burn</h3>
+          <div id="gDB"></div>
+        </div>
+        <div class="card">
+          <h3>Teeth whitening</h3>
+          <div id="gTeeth"></div>
+          <div class="note" style="margin-top:0">Only the teeth inside the mouth opening are touched: lips, gums, tongue, the dark mouth interior and the eyes are masked out. Needs a detected face.</div>
+        </div>
+        <div class="card">
+          <h3>Protect marks</h3>
+          <label class="sw"><input type="checkbox" id="keepBindi" checked><span>Bindi, sindoor, tilak<small>Forehead centre line and dot</small></span></label>
+          <label class="sw"><input type="checkbox" id="keepMoles" checked><span>Moles &amp; beauty marks<small>Dark, non-red spots on the face</small></span></label>
+          <label class="sw"><input type="checkbox" id="keepMarks" checked><span>Other strong marks<small>Gems, kajal dots</small></span></label>
+          <div class="note">Missed one? Use the <b>Guard</b> tool (G) and click it.</div>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="brush">
+        <div class="card">
+          <h3>Brush tool</h3>
+          <div class="toolname"><b id="toolIco"></b><span id="toolName"></span></div>
+          <div class="note" id="brushHint" style="margin-top:0"></div>
+          <div id="gBrush"></div>
+          <button id="btnPick" class="full" style="margin-bottom:8px">Pick heal source&hellip;</button>
+        </div>
+        <div class="card">
+          <h3>Shortcuts</h3>
+          <div class="keys">
+            <span><kbd>V</kbd></span><span>Move / hand (default). Hold <kbd>Space</kbd> for it with any tool</span>
+            <span><kbd>S</kbd> <kbd>D</kbd> <kbd>B</kbd> <kbd>H</kbd> <kbd>W</kbd> <kbd>G</kbd></span><span>Soften, dodge, burn, heal, whiten, guard</span>
+            <span><kbd>[</kbd> <kbd>]</kbd></span><span>Brush size</span>
+            <span><kbd>Ctrl</kbd>+<kbd>Z</kbd></span><span>Undo stroke</span>
+            <span>Hold <kbd>\</kbd></span><span>Show the original</span>
+            <span><kbd>Alt</kbd>+click</span><span>Set heal source</span>
+            <span>Mouse wheel</span><span>Zoom at the cursor</span>
+            <span>Double-click a slider</span><span>Reset it</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="export">
+        <div class="card">
+          <h3>Recipe</h3>
+          <button id="btnCopy" class="full">Copy recipe JSON</button>
+          <div class="note">Global settings only. This is what the Python bulk engine would read.</div>
+        </div>
+        <div class="card">
+          <h3>Bulk to a new folder</h3>
+          <div class="row"><label for="resBulk">Output size (long edge)</label>
+            <select id="resBulk"><option value="1920">1920 px</option><option value="2560" selected>2560 px</option><option value="3840">3840 px (slow)</option></select></div>
+          <label class="btn full" style="display:block;text-align:center;margin:8px 0">Choose photos&hellip;<input id="bulkFiles" type="file" accept="image/*" multiple hidden></label>
+          <div class="note" id="bulkInfo">No photos chosen.</div>
+          <button id="btnBulk" class="primary full" disabled>Apply recipe to all</button>
+          <progress id="bulkProg" value="0" max="1" style="display:none;margin-top:8px"></progress>
+          <div class="note">Chrome/Edge: pick a parent folder and an <b>Edited</b> subfolder is created. Other browsers: a ZIP is downloaded. Brush strokes are per-photo and not part of bulk. Output is never upscaled.</div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+</main>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+let EDIT_MAX = 1920, BATCH_MAX = 2560;      // long edge in px; never upscaled
+
+/* ---------- recipe (global, resolution independent) ---------- */
+const DEFAULT = {amount:45, radius:6, strength:22, texture:45, skinOnly:true, glow:0, warmth:0, bright:0,
+                  autoHeal:0, healSens:50, evenLight:0, contour:0, teeth:0,
+                  keepBindi:true, keepMoles:true, keepMarks:true, useSeg:true, keepFeatures:true};
+const recipe = {...DEFAULT};
+const PRESETS = {
+  Off:    {amount:0,  radius:6, strength:22, texture:45, glow:0,  warmth:0, bright:0, autoHeal:0,  healSens:50, evenLight:0,  contour:0,  teeth:0},
+  Subtle: {amount:25, radius:4, strength:14, texture:70, glow:0,  warmth:0, bright:0, autoHeal:40, healSens:45, evenLight:20, contour:0,  teeth:15},
+  Natural:{amount:45, radius:6, strength:22, texture:45, glow:5,  warmth:2, bright:2, autoHeal:60, healSens:50, evenLight:35, contour:25, teeth:30},
+  Beauty: {amount:65, radius:7, strength:24, texture:35, glow:15, warmth:5, bright:3, autoHeal:75, healSens:55, evenLight:50, contour:40, teeth:45},
+  Glam:   {amount:80, radius:9, strength:30, texture:25, glow:35, warmth:10, bright:6, autoHeal:90, healSens:60, evenLight:65, contour:60, teeth:60}
+};
+const SLIDERS = {
+  gSmooth: [
+    ['amount','Amount',0,100,1],
+    ['radius','Detail size (blemish scale)',2,16,1],
+    ['strength','Smoothing strength',5,60,1],
+    ['texture','Keep pore texture',0,100,1]],
+  gTone: [
+    ['glow','Soft glow',0,100,1],
+    ['warmth','Warmth',-50,50,1],
+    ['bright','Brightness',-50,50,1]],
+  gHeal: [
+    ['autoHeal','Strength',0,100,1],
+    ['healSens','Sensitivity',0,100,1]],
+  gDB: [
+    ['evenLight','Even out light',0,100,1],
+    ['contour','Contour (shape)',0,100,1]],
+  gTeeth: [
+    ['teeth','Whitening',0,100,1]]
+};
+
+/* ---------- image state ---------- */
+let W=0, H=0, name='portrait';
+let orig=null, base=null, cur=null, maskF=null, maskCanvas=null, blurPl=null;
+let strokes=[], tool='move', showOrig=false, zoom='fit';
+let pan=null, spaceDown=false;      // hand tool state
+const brush = {size:60, hard:0.35, strength:0.6};
+let healOff=null, healSrc=null, pickingSrc=false;
+let faces=[], lastInfo={faces:0,healed:0,spots:[]}, faceMsg='', regionCanvas=null, edgeCanvas=null, segMap=null;
+let userGuards=[];   // manual protect circles, normalised to image width: {x,y,r}
+
+/* MediaPipe FaceMesh index lists (same topology as the Python FaceLandmarker) */
+const OVAL=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+const LEYE=[263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466];
+const REYE=[33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];
+const LBROW=[300,293,334,296,336,285,295,282,283,276];
+const RBROW=[70,63,105,66,107,55,65,52,53,46];
+const LIPS=[61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185];
+const MOUTH_IN=[78,191,80,81,82,13,312,311,310,415,308,324,318,402,317,14,87,178,88,95];   // inner lip loop = the mouth opening
+
+/* TEETH: geometric zone (mouth opening, shrunk a little so lips never get in) x colour gate (tooth-coloured pixels only:
+   bright enough, not red like gums / tongue / inner lip, not strongly saturated). Used by the Teeth slider and the Whiten brush. */
+function teethZone(src, faces){
+  if(src._tz&&src._tz.faces===faces) return src._tz.m;
+  const w=src.width, h=src.height, n=w*h, m=new Float32Array(n);
+  if(faces&&faces.length){
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const g=c.getContext('2d',{willReadFrequently:true});
+    g.fillStyle='#000'; g.fillRect(0,0,w,h); g.fillStyle='#fff';
+    let fw=0;
+    for(const lm of faces){
+      g.beginPath(); MOUTH_IN.forEach((k,i)=>{const x=lm[k].x*w,y=lm[k].y*h; i?g.lineTo(x,y):g.moveTo(x,y);}); g.closePath(); g.fill();
+      fw+=Math.hypot((lm[454].x-lm[234].x)*w,(lm[454].y-lm[234].y)*h);
+    }
+    fw/=faces.length;
+    const d=g.getImageData(0,0,w,h).data, raw=new Float32Array(n);
+    for(let i=0;i<n;i++) raw[i]=d[i*4]/255;
+    const b=box(raw,w,h,Math.max(1,Math.round(fw*.008)));          // blur, then keep only the core: the zone shrinks away from the lips
+    for(let i=0;i<n;i++) m[i]=Math.max(0,Math.min(1,(b[i]-.55)/.35));
+  }
+  src._tz={faces,m};
+  return m;
+}
+const sstep=(a,b,x)=>{ const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); };
+function toothGate(r,g,b){
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), L=.299*r+.587*g+.114*b;
+  const sat=mx>0?(mx-mn)/mx:0;
+  return sstep(75,125,L)*(1-sstep(38,72,r-g))*(1-sstep(.42,.62,sat));
+}
+
+/* face detection (lazy, one landmarker for the page) */
+let lmPromise=null;
+const MP='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+function getLandmarker(){
+  if(!lmPromise) lmPromise=(async()=>{
+    const v=await import(MP+'/+esm');
+    const fs=await v.FilesetResolver.forVisionTasks(MP+'/wasm');
+    return v.FaceLandmarker.createFromOptions(fs,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'},
+      runningMode:'IMAGE', numFaces:8, minFaceDetectionConfidence:.5});
+  })();
+  return lmPromise;
+}
+async function detectFaces(canvas){
+  try{ const lmk=await getLandmarker(); return lmk.detect(canvas).faceLandmarks||[]; }
+  catch(e){ lmPromise=null; throw e; }
+}
+
+/* Small faces (full-body / group shots): the landmarker only sees a few-dozen-pixel face as noise. The AI skin mask already tells us
+   where face skin is, so we cut a generous square around each face-skin blob, zoom it to 640 px and run the landmarker on that. */
+async function detectSmallFaces(canvas, sg){
+  const w=canvas.width, h=canvas.height, S=4;
+  const small=downS(sg.face,sg.w,sg.h,S), lw=small.w, lh=small.h, bin=new Uint8Array(lw*lh);
+  for(let i=0;i<bin.length;i++) bin[i]=small.a[i]>.5?1:0;
+  const comps=[];
+  eachComp(bin,lw,lh,(list,bx0,by0,bx1,by1)=>{ if(list.length>=6) comps.push({a:list.length,bx0,by0,bx1,by1}); });
+  comps.sort((a,b)=>b.a-a.a);
+  const lmk=await getLandmarker(), tmp=document.createElement('canvas'); tmp.width=tmp.height=640;
+  const g=tmp.getContext('2d'), fx=w/lw, fy=h/lh, found=[];
+  for(const c of comps.slice(0,6)){
+    const cx=(c.bx0+c.bx1+1)/2*fx, cy=(c.by0+c.by1+1)/2*fy;
+    const side=Math.min(w,h,Math.max((c.bx1-c.bx0+1)*fx,(c.by1-c.by0+1)*fy)*2.2);
+    const sx=Math.max(0,Math.min(w-side,cx-side/2)), sy=Math.max(0,Math.min(h-side,cy-side/2));
+    g.clearRect(0,0,640,640); g.drawImage(canvas,sx,sy,side,side,0,0,640,640);
+    const r=lmk.detect(tmp).faceLandmarks||[];
+    if(!r.length) continue;
+    const lm=r[0].map(p=>({x:(sx+p.x*side)/w, y:(sy+p.y*side)/h, z:p.z}));
+    if(found.some(f=>Math.hypot(f[1].x-lm[1].x,f[1].y-lm[1].y)<.02)) continue;       // same face twice
+    found.push(lm);
+  }
+  return found;
+}
+
+/* AI person segmentation: MediaPipe "selfie multiclass" -> background, hair, body-skin, face-skin, clothes, others (jewellery, accessories) */
+let segPromise=null;
+function getSegmenter(){
+  if(!segPromise) segPromise=(async()=>{
+    const v=await import(MP+'/+esm');
+    const fs=await v.FilesetResolver.forVisionTasks(MP+'/wasm');
+    return v.ImageSegmenter.createFromOptions(fs,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite'},
+      runningMode:'IMAGE', outputCategoryMask:false, outputConfidenceMasks:true});
+  })();
+  return segPromise;
+}
+/* returns {w,h,skin,non,cache} (soft 0..1 maps at the model's output size) or null when unavailable -> colour-based fallback */
+async function segmentImage(canvas){
+  try{
+    const sg=await getSegmenter(), res=sg.segment(canvas), cms=res.confidenceMasks;
+    if(!cms||cms.length<6) throw new Error('unexpected segmenter output');
+    const mw=cms[0].width, mh=cms[0].height, n=mw*mh, skin=new Float32Array(n), non=new Float32Array(n), face=new Float32Array(n);
+    const add=(ids,out)=>{ for(const id of ids){ const a=cms[id].getAsFloat32Array(); for(let i=0;i<n;i++) out[i]+=a[i]; } for(let i=0;i<n;i++) if(out[i]>1) out[i]=1; };
+    add([2,3],skin); add([1,4,5],non); add([3],face);  // skin = body+face skin; non-skin = hair + clothes + accessories; face = face-skin only
+    try{ cms.forEach(m=>m.close&&m.close()); res.close&&res.close(); }catch(_){}
+    return {w:mw,h:mh,skin,non,face,cache:{}};
+  }catch(e){ segPromise=null; return null; }
+}
+
+const cv = $('#cv'), ctx = cv.getContext('2d');
+
+/* ---------- filters ---------- */
+function box(src, w, h, r){
+  const tmp = new Float32Array(w*h), out = new Float32Array(w*h), k = 2*r+1;
+  for(let y=0;y<h;y++){
+    const o=y*w; let s=0;
+    for(let x=-r;x<=r;x++) s += src[o+Math.min(w-1,Math.max(0,x))];
+    for(let x=0;x<w;x++){
+      tmp[o+x]=s/k;
+      s += src[o+Math.min(w-1,x+r+1)] - src[o+Math.max(0,x-r)];
+    }
+  }
+  /* vertical pass row by row with a running column sum (cache friendly, ~3x faster than walking columns) */
+  const col=new Float32Array(w);
+  for(let y=-r;y<=r;y++){
+    const o=Math.min(h-1,Math.max(0,y))*w;
+    for(let x=0;x<w;x++) col[x]+=tmp[o+x];
+  }
+  for(let y=0;y<h;y++){
+    const o=y*w, a=Math.min(h-1,y+r+1)*w, b=Math.max(0,y-r)*w;
+    for(let x=0;x<w;x++){ out[o+x]=col[x]/k; col[x]+=tmp[a+x]-tmp[b+x]; }
+  }
+  return out;
+}
+
+/* block-average downsample by an integer factor */
+function downS(a, w, h, s){
+  const sw=Math.ceil(w/s), sh=Math.ceil(h/s), o=new Float32Array(sw*sh);
+  for(let y=0;y<sh;y++){
+    const ya=y*s, yb=Math.min(h,ya+s);
+    for(let x=0;x<sw;x++){
+      const xa=x*s, xb=Math.min(w,xa+s); let sum=0, c=0;
+      for(let yy=ya;yy<yb;yy++){ const o2=yy*w; for(let xx=xa;xx<xb;xx++){ sum+=a[o2+xx]; c++; } }
+      o[y*sw+x]=sum/c;
+    }
+  }
+  return {a:o,w:sw,h:sh};
+}
+/* very large, smooth blurs: do them on a small copy and scale back up (cheap, and the result is smooth anyway) */
+function lowBlur(src, w, h, r, s, passes){
+  const d=downS(src,w,h,s), rr=Math.max(1,Math.round(r/s)); let b=d.a;
+  for(let k=0;k<(passes||1);k++) b=box(b,d.w,d.h,rr);
+  return resample(b,d.w,d.h,w,h);
+}
+/* self-guided filter (He et al.): edge-preserving, O(n). Large images run the fast variant: a,b are computed on a half-size copy and upsampled */
+function guided(I, w, h, r, eps){
+  if(r<4||w*h<400000) return guidedFull(I,w,h,r,eps);
+  const d=downS(I,w,h,2), sw=d.w, sh=d.h, n=sw*sh, Is=d.a, rr=Math.max(1,Math.round(r/2));
+  const II=new Float32Array(n); for(let i=0;i<n;i++) II[i]=Is[i]*Is[i];
+  const m=box(Is,sw,sh,rr), mm=box(II,sw,sh,rr), a=II, b=new Float32Array(n);
+  for(let i=0;i<n;i++){ const v=mm[i]-m[i]*m[i], ai=v/(v+eps); a[i]=ai; b[i]=m[i]*(1-ai); }
+  const ma=resample(box(a,sw,sh,rr),sw,sh,w,h), mb=resample(box(b,sw,sh,rr),sw,sh,w,h), o=new Float32Array(w*h);
+  for(let i=0;i<o.length;i++) o[i]=ma[i]*I[i]+mb[i];
+  return o;
+}
+function guidedFull(I, w, h, r, eps){
+  const n=w*h, II=new Float32Array(n);
+  for(let i=0;i<n;i++) II[i]=I[i]*I[i];
+  const m=box(I,w,h,r), mm=box(II,w,h,r), a=II, b=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const v=mm[i]-m[i]*m[i], ai=v/(v+eps);
+    a[i]=ai; b[i]=m[i]*(1-ai);
+  }
+  const ma=box(a,w,h,r), mb=box(b,w,h,r), o=new Float32Array(n);
+  for(let i=0;i<n;i++) o[i]=ma[i]*I[i]+mb[i];
+  return o;
+}
+
+function skinMask(d, w, h, blurR){
+  const m=new Float32Array(w*h);
+  for(let i=0,p=0;i<m.length;i++,p+=4){
+    const r=d[p], g=d[p+1], b=d[p+2];
+    const y=.299*r+.587*g+.114*b;
+    const cb=128-.168736*r-.331264*g+.5*b;
+    const cr=128+.5*r-.418688*g-.081312*b;
+    m[i]=(cb>=75&&cb<=130&&cr>=130&&cr<=175&&y>35&&r>b)?1:0;
+  }
+  return box(box(m,w,h,blurR),w,h,blurR);
+}
+
+/* ---------- segmentation helpers ---------- */
+function resample(a, sw, sh, w, h){                       // bilinear
+  if(sw===w&&sh===h) return a.slice();
+  const o=new Float32Array(w*h), fx=sw/w, fy=sh/h;
+  const xi=new Int32Array(w), xt=new Float32Array(w);
+  for(let x=0;x<w;x++){ const sx=Math.min(sw-1.001,Math.max(0,(x+.5)*fx-.5)); xi[x]=sx|0; xt[x]=sx-(sx|0); }
+  for(let y=0;y<h;y++){
+    const sy=Math.min(sh-1.001,Math.max(0,(y+.5)*fy-.5)), y0=sy|0, ty=sy-y0, r0=y0*sw, r1=r0+sw, oy=y*w;
+    for(let x=0;x<w;x++){
+      const i=xi[x], tx=xt[x];
+      o[oy+x]=(a[r0+i]*(1-tx)+a[r0+i+1]*tx)*(1-ty)+(a[r1+i]*(1-tx)+a[r1+i+1]*tx)*ty;
+    }
+  }
+  return o;
+}
+/* guided filter with a separate guide image: snaps soft masks to the real edges in the photo */
+function guidedMulti(I, ps, w, h, r, eps){
+  if(w*h<400000) return guidedMultiFull(I,ps,w,h,r,eps);
+  /* fast variant: coefficients a,b are fitted on half-size copies, upsampled and applied to the full-size guide */
+  const d=downS(I,w,h,2), sw=d.w, sh=d.h, n=sw*sh, Is=d.a, rr=Math.max(1,Math.round(r/2));
+  const II=new Float32Array(n); for(let i=0;i<n;i++) II[i]=Is[i]*Is[i];
+  const mI=box(Is,sw,sh,rr), mII=box(II,sw,sh,rr), vI=new Float32Array(n);
+  for(let i=0;i<n;i++) vI[i]=mII[i]-mI[i]*mI[i]+eps;
+  return ps.map(p=>{
+    const Ps=downS(p,w,h,2).a, Ip=new Float32Array(n); for(let i=0;i<n;i++) Ip[i]=Is[i]*Ps[i];
+    const mp=box(Ps,sw,sh,rr), mIp=box(Ip,sw,sh,rr), a=new Float32Array(n), b=new Float32Array(n);
+    for(let i=0;i<n;i++){ a[i]=(mIp[i]-mI[i]*mp[i])/vI[i]; b[i]=mp[i]-a[i]*mI[i]; }
+    const ma=resample(box(a,sw,sh,rr),sw,sh,w,h), mb=resample(box(b,sw,sh,rr),sw,sh,w,h), o=new Float32Array(w*h);
+    for(let i=0;i<o.length;i++){ const v=ma[i]*I[i]+mb[i]; o[i]=v<0?0:v>1?1:v; }
+    return o;
+  });
+}
+function guidedMultiFull(I, ps, w, h, r, eps){
+  const n=w*h, II=new Float32Array(n);
+  for(let i=0;i<n;i++) II[i]=I[i]*I[i];
+  const mI=box(I,w,h,r), mII=box(II,w,h,r), vI=new Float32Array(n);
+  for(let i=0;i<n;i++) vI[i]=mII[i]-mI[i]*mI[i]+eps;
+  return ps.map(p=>{
+    const Ip=new Float32Array(n); for(let i=0;i<n;i++) Ip[i]=I[i]*p[i];
+    const mp=box(p,w,h,r), mIp=box(Ip,w,h,r), a=new Float32Array(n), b=new Float32Array(n);
+    for(let i=0;i<n;i++){ a[i]=(mIp[i]-mI[i]*mp[i])/vI[i]; b[i]=mp[i]-a[i]*mI[i]; }
+    const ma=box(a,w,h,r), mb=box(b,w,h,r), o=new Float32Array(n);
+    for(let i=0;i<n;i++){ const v=ma[i]*I[i]+mb[i]; o[i]=v<0?0:v>1?1:v; }
+    return o;
+  });
+}
+/* segmentation maps at the size of `src`, upsampled and edge-refined (cached per size) */
+function segFor(sgm, src){
+  const w=src.width, h=src.height, key=w+'x'+h;
+  if(sgm.cache[key]) return sgm.cache[key];
+  const d=src.data, I=new Float32Array(w*h);
+  for(let i=0;i<I.length;i++) I[i]=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];
+  const [skin,non,face]=guidedMulti(I,[resample(sgm.skin,sgm.w,sgm.h,w,h),resample(sgm.non,sgm.w,sgm.h,w,h),resample(sgm.face,sgm.w,sgm.h,w,h)],w,h,Math.max(2,Math.round(w*.004)),100);
+  return sgm.cache[key]={skin,non,face};
+}
+
+/* ---------- face-aware helpers ---------- */
+function faceGeom(lm, w, h){
+  const P=k=>[lm[k].x*w, lm[k].y*h];
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const k of OVAL){const p=P(k); x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]);}
+  const a=P(33), b=P(263);
+  return {lm, x0,y0,x1,y1,
+    fw:Math.hypot(P(454)[0]-P(234)[0],P(454)[1]-P(234)[1]),
+    fh:Math.hypot(P(152)[0]-P(10)[0],P(152)[1]-P(10)[1]),
+    th:Math.atan2(b[1]-a[1],b[0]-a[0])};   // head roll
+}
+
+/* Face outline extended to the real hairline. FaceMesh's oval stops part-way up the forehead; with the AI mask we
+   walk "up" from each top point until hair / non-skin starts, otherwise we add a default forehead extension. */
+function faceOval(lm, w, h, sg){
+  const P=k=>[lm[k].x*w, lm[k].y*h], top=P(10), chin=P(152);
+  let ux=top[0]-chin[0], uy=top[1]-chin[1]; const fh=Math.hypot(ux,uy)||1; ux/=fh; uy/=fh;
+  const cx=(top[0]+chin[0])/2, cy=(top[1]+chin[1])/2, pts=OVAL.map(P), ext=new Float32Array(pts.length), dirs=[];
+  const fw=Math.hypot(P(454)[0]-P(234)[0],P(454)[1]-P(234)[1]);
+  const reach=(p,dx,dy,maxE)=>{                              // distance we can walk along (dx,dy) while still on skin
+    let s=0;
+    for(;s<maxE;s+=2){
+      const x=Math.round(p[0]+dx*s), y=Math.round(p[1]+dy*s);
+      if(x<0||y<0||x>=w||y>=h) break;
+      const j=y*w+x; if(sg.non[j]>.5||sg.skin[j]<.35) break;
+    }
+    return Math.max(0,s-3);
+  };
+  pts.forEach((p,i)=>{
+    const t=((p[0]-cx)*ux+(p[1]-cy)*uy)/(fh/2);            // -1 at the chin ... +1 at the top of the oval
+    dirs[i]=[ux,uy];
+    if(t<.2){                                                // cheeks, jaw, chin: grow outward to the real skin edge
+      let dx=p[0]-cx, dy=p[1]-cy; const dl=Math.hypot(dx,dy)||1; dx/=dl; dy/=dl; dirs[i]=[dx,dy];
+      const chinZone=t<-.55;
+      ext[i]=sg ? reach(p,dx,dy,chinZone?fh*.07:fw*.10) : (chinZone?fh*.04:fw*.04);
+      return;
+    }
+    const wg=Math.min(1,(t-.2)/.8);
+    ext[i]=sg ? reach(p,ux,uy,fh*.45) : fh*.16*wg;           // forehead: up to the hairline
+  });
+  const sm=new Float32Array(ext.length), n=ext.length;       // smooth along the outline so it doesn't zig-zag
+  for(let i=0;i<n;i++) sm[i]=(ext[(i+n-1)%n]+2*ext[i]+ext[(i+1)%n])/4;
+  return pts.map((p,i)=>[p[0]+dirs[i][0]*sm[i], p[1]+dirs[i][1]*sm[i]]);
+}
+
+/* soft signed light map: >0 dodge (forehead, nose bridge, cheek apples, chin, under-eyes), <0 burn (cheek hollows, under chin, nose sides) */
+function addLight(map, w, h, gm){
+  const lm=gm.lm, P=k=>[lm[k].x*w, lm[k].y*h], {fw,fh}=gm;
+  const L=(a,b,t)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+  const c=Math.cos(gm.th), s=Math.sin(gm.th);
+  const dn=(p,d)=>[p[0]-s*d, p[1]+c*d];                  // move "down" in the face frame
+  const blobs=[
+    [L(P(10),P(168),.5),          fw*.22,  fh*.10, .55],
+    [L(P(168),P(6),.5),           fw*.045, fh*.11, .60],
+    [dn(P(205),-fh*.02),          fw*.09,  fh*.06, .55],
+    [dn(P(425),-fh*.02),          fw*.09,  fh*.06, .55],
+    [L(P(152),P(17),.3),          fw*.10,  fh*.045,.50],
+    [dn(P(145),fh*.035),          fw*.085, fh*.03, 1.0],
+    [dn(P(374),fh*.035),          fw*.085, fh*.03, 1.0],
+    [L(P(234),P(61),.55),         fw*.08,  fh*.09,-.70],
+    [L(P(454),P(291),.55),        fw*.08,  fh*.09,-.70],
+    [dn(P(152),fh*.07),           fw*.28,  fh*.06,-.80],
+    [dn(P(129),-fh*.04),          fw*.035, fh*.06,-.50],
+    [dn(P(358),-fh*.04),          fw*.035, fh*.06,-.50]];
+  const x0=Math.max(0,Math.floor(gm.x0-fw*.1)), x1=Math.min(w-1,Math.ceil(gm.x1+fw*.1));
+  const y0=Math.max(0,Math.floor(gm.y0-fh*.1)), y1=Math.min(h-1,Math.ceil(gm.y1+fh*.2));
+  for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+    let v=0;
+    for(const [cc,sx,sy,wg] of blobs){
+      const dx=x-cc[0], dy=y-cc[1], u=(dx*c+dy*s)/sx, q=(-dx*s+dy*c)/sy;
+      const e=u*u+q*q; if(e<12) v+=wg*Math.exp(-.5*e);
+    }
+    map[y*w+x]+=v;
+  }
+}
+
+function buildFaceMasks(faces, w, h, d, sg){
+  const cvs=document.createElement('canvas'); cvs.width=w; cvs.height=h;
+  const g=cvs.getContext('2d',{willReadFrequently:true});
+  const geoms=faces.map(lm=>faceGeom(lm,w,h));
+  const ovals=faces.map(lm=>faceOval(lm,w,h,sg));            // outline incl. the full forehead
+  geoms.forEach((gm,i)=>{ for(const p of ovals[i]){ gm.x0=Math.min(gm.x0,p[0]); gm.y0=Math.min(gm.y0,p[1]); gm.x1=Math.max(gm.x1,p[0]); gm.y1=Math.max(gm.y1,p[1]); } });
+  const fw=geoms.reduce((a,q)=>a+q.fw,0)/geoms.length;
+  const raster=fn=>{
+    g.fillStyle='#000'; g.fillRect(0,0,w,h); g.fillStyle='#fff'; g.strokeStyle='#fff'; g.lineJoin='round';
+    fn(); const d=g.getImageData(0,0,w,h).data, m=new Float32Array(w*h);
+    for(let i=0;i<m.length;i++) m[i]=d[i*4]/255;
+    return m;
+  };
+  const poly=(lm,idx,grow)=>{
+    g.beginPath(); idx.forEach((k,i)=>{const x=lm[k].x*w,y=lm[k].y*h; i?g.lineTo(x,y):g.moveTo(x,y);}); g.closePath(); g.fill();
+    if(grow){g.lineWidth=grow; g.stroke();}
+  };
+  const face=raster(()=>ovals.forEach(pts=>{
+    g.beginPath(); pts.forEach((p,j)=>j?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1])); g.closePath(); g.fill();
+  }));
+  const excl=raster(()=>faces.forEach((lm,i)=>{
+    const gr=geoms[i].fw*.05;
+    [LEYE,REYE,LBROW,RBROW,LIPS].forEach(ix=>poly(lm,ix,gr));
+    [98,327,2].forEach(k=>{g.beginPath(); g.arc(lm[k].x*w,lm[k].y*h,geoms[i].fw*.035,0,6.283); g.fill();});
+  }));
+  /* EDGE-TO-EDGE FACE: with the AI mask, the face is the whole connected "face-skin" area that touches the landmark face
+     (cheek to cheek, hairline to chin, ears' skin), united with the landmark oval minus hair. This replaces the oval's edge. */
+  if(sg&&sg.face){
+    const n0=w*h, seen=new Uint8Array(n0), stack=new Int32Array(n0), f2=new Float32Array(n0); let sp0=0;
+    for(let i=0;i<n0;i++) if(face[i]>.5&&sg.face[i]>.5){ seen[i]=1; stack[sp0++]=i; }
+    while(sp0){
+      const i=stack[--sp0], x=i%w, y=(i/w)|0; f2[i]=sg.face[i];
+      if(x>0   &&!seen[i-1]&&sg.face[i-1]>.5){seen[i-1]=1;stack[sp0++]=i-1;}
+      if(x<w-1 &&!seen[i+1]&&sg.face[i+1]>.5){seen[i+1]=1;stack[sp0++]=i+1;}
+      if(y>0   &&!seen[i-w]&&sg.face[i-w]>.5){seen[i-w]=1;stack[sp0++]=i-w;}
+      if(y<h-1 &&!seen[i+w]&&sg.face[i+w]>.5){seen[i+w]=1;stack[sp0++]=i+w;}
+    }
+    for(let i=0;i<n0;i++) face[i]=Math.max(face[i]*(1-sg.non[i]), f2[i]);
+  }
+  /* wide keep-out around eyes (eyeliner, kajal wings, lashes), brows, lips and the nose tip: those are not moles */
+  const exclBig=raster(()=>faces.forEach((lm,i)=>{
+    const gr=geoms[i].fw*.15;
+    [LEYE,REYE,LBROW,RBROW,LIPS].forEach(ix=>poly(lm,ix,gr));
+    [98,327,2,4,129,358,102,331].forEach(k=>{g.beginPath(); g.arc(lm[k].x*w,lm[k].y*h,geoms[i].fw*.07,0,6.283); g.fill();});   // nose tip and both nose wings
+  }));
+  /* the landmark oval stops at the hairline / cheeks, so grow it: wider (ears), higher (forehead), plus a neck ellipse.
+     Outside the oval only skin-coloured pixels count, so hair and background are left alone. */
+  const broad=raster(()=>faces.forEach((lm,i)=>{
+    const gm=geoms[i], pts=ovals[i]; let cx=0, cy=0;
+    pts.forEach(p=>{cx+=p[0]; cy+=p[1];}); cx/=pts.length; cy/=pts.length;
+    g.beginPath();
+    pts.forEach((p,j)=>{
+      const dx=p[0]-cx, dy=p[1]-cy, x=cx+dx*1.3, y=cy+dy*(dy<0?1.3:1.25);
+      j?g.lineTo(x,y):g.moveTo(x,y);
+    });
+    g.closePath(); g.fill();
+    const s=Math.sin(gm.th), c=Math.cos(gm.th);
+    g.beginPath(); g.ellipse(lm[152].x*w-s*gm.fh*.35, lm[152].y*h+c*gm.fh*.35, gm.fw*.42, gm.fh*.45, gm.th, 0, 6.283); g.fill();
+  }));
+  /* midline zone: glabella (between brows) up past the hairline to the parting — where bindi, tilak and sindoor live */
+  const zone=raster(()=>faces.forEach((lm,i)=>{
+    const p9=[lm[9].x*w,lm[9].y*h], p10=[lm[10].x*w,lm[10].y*h];
+    const ux=p10[0]-p9[0], uy=p10[1]-p9[1], Lf=Math.hypot(ux,uy);
+    g.beginPath(); g.ellipse(p9[0]+ux*.8, p9[1]+uy*.8, Lf*.95, geoms[i].fw*.12, Math.atan2(uy,ux), 0, 6.283); g.fill();
+  }));
+  const fe=Math.max(3,Math.round(fw*.05));
+  const faceF=lowBlur(face,w,h,fe,4,2), broadF=lowBlur(broad,w,h,fe,4,2);
+  const sk=sg?sg.skin:skinMask(d,w,h,Math.max(2,Math.round(fw*.01))), exF=box(excl,w,h,2);   // AI skin map when available, colour range otherwise
+  const re=Math.max(3,Math.round(fw*.12)), fb=lowBlur(face,w,h,re,4,2);
+  const n=w*h, reg=new Float32Array(n), wt=new Float32Array(n), wf=new Float32Array(n), edge=new Float32Array(n), light=new Float32Array(n);
+  /* all skin connected to the face (neck, chest, shoulders, hands) so the retouch doesn't stop at the jaw */
+  const conn=new Uint8Array(n), stack=new Int32Array(n); let sp=0;
+  const isSkin=i=>sk[i]>.6&&exF[i]<.5;
+  for(let i=0;i<n;i++) if(face[i]>.5&&isSkin(i)){ conn[i]=1; stack[sp++]=i; }
+  while(sp){
+    const i=stack[--sp], x=i%w, y=(i/w)|0;
+    if(x>0  &&!conn[i-1]&&isSkin(i-1)){conn[i-1]=1;stack[sp++]=i-1;}
+    if(x<w-1&&!conn[i+1]&&isSkin(i+1)){conn[i+1]=1;stack[sp++]=i+1;}
+    if(y>0  &&!conn[i-w]&&isSkin(i-w)){conn[i-w]=1;stack[sp++]=i-w;}
+    if(y<h-1&&!conn[i+w]&&isSkin(i+w)){conn[i+w]=1;stack[sp++]=i+w;}
+  }
+  const connF=new Float32Array(n); for(let i=0;i<n;i++) connF[i]=conn[i];
+  const bodyF=lowBlur(connF,w,h,fe,4,2);
+  for(let i=0;i<n;i++){
+    reg[i]=sg ? Math.max(faceF[i]*(1-.9*sg.non[i]), broadF[i]*sk[i], bodyF[i])      // hair strands / jewellery over the face drop out
+              : Math.max(faceF[i], broadF[i]*(.15+.85*sk[i]), bodyF[i]);
+    wt[i]=reg[i]*(1-exF[i]); wf[i]=reg[i]*(1-.85*exF[i]);
+    edge[i]=face[i]*(1-fb[i]);
+  }
+  geoms.forEach(gm=>addLight(light,w,h,gm));
+  return {geoms, fw, wt, wf, edge, light, reg, sk, exc:exF, zone, face, ovals, excB:box(exclBig,w,h,2)};
+}
+
+/* binary max-filter (dilation) */
+function dilate(m, w, h, r){
+  const n=w*h, o=new Uint8Array(n); let any=false;
+  for(let i=0;i<n;i++) if(m[i]){ any=true; break; }
+  if(!any) return o;
+  const f=new Float32Array(n); for(let i=0;i<n;i++) f[i]=m[i]?1:0;
+  const b=box(f,w,h,r), th=.5/((2*r+1)*(2*r+1));
+  for(let i=0;i<n;i++) o[i]=b[i]>th?1:0;
+  return o;
+}
+
+/* 4-connected components of a binary map; cb(list, bx0, by0, bx1, by1) */
+function eachComp(cand, w, h, cb){
+  const n=w*h, seen=new Uint8Array(n), stack=new Int32Array(n);
+  for(let s0=0;s0<n;s0++){
+    if(!cand[s0]||seen[s0]) continue;
+    let sp=0, bx0=1e9,by0=1e9,bx1=-1,by1=-1; const list=[];
+    stack[sp++]=s0; seen[s0]=1;
+    while(sp){
+      const i=stack[--sp], x=i%w, y=(i/w)|0;
+      list.push(i);
+      if(x<bx0)bx0=x; if(x>bx1)bx1=x; if(y<by0)by0=y; if(y>by1)by1=y;
+      if(x>0  &&cand[i-1] &&!seen[i-1]) {seen[i-1]=1;stack[sp++]=i-1;}
+      if(x<w-1&&cand[i+1] &&!seen[i+1]) {seen[i+1]=1;stack[sp++]=i+1;}
+      if(y>0  &&cand[i-w] &&!seen[i-w]) {seen[i-w]=1;stack[sp++]=i-w;}
+      if(y<h-1&&cand[i+w] &&!seen[i+w]) {seen[i+w]=1;stack[sp++]=i+w;}
+    }
+    cb(list,bx0,by0,bx1,by1);
+  }
+}
+
+/* DELIBERATE-MARK GUARD: find bindi / sindoor / tilak / moles / gems so no auto step touches them.
+   Writes a binary map gb and a list of labelled marks. */
+function markGuard(P, w, h, fm, opt, gb, marks){
+  const n=w*h, {sk,exc,reg,zone}=fm;
+  const L=new Float32Array(n), Rd=new Float32Array(n), ws=new Float32Array(n), Lw=new Float32Array(n), Rw=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    L[i]=.299*P[0][i]+.587*P[1][i]+.114*P[2][i]; Rd[i]=P[0][i]-P[1][i];
+    ws[i]=(sk[i]>.5&&exc[i]<.3)?1:0; Lw[i]=L[i]*ws[i]; Rw[i]=Rd[i]*ws[i];
+  }
+  const r=Math.max(3,Math.round(fm.fw*.05));
+  const den=lowBlur(ws,w,h,r,2), Lb=lowBlur(Lw,w,h,r,2), Rb=lowBlur(Rw,w,h,r,2);   // smooth local means: half-size is plenty
+  const cz=new Uint8Array(n), dz=new Uint8Array(n), so=new Uint8Array(n);
+  const useZone=opt.keepBindi;
+  for(let i=0;i<n;i++){
+    if(exc[i]>=.3) continue;
+    const inZ=useZone&&zone[i]>.5;
+    if(!inZ&&reg[i]<.3) continue;
+    const R=P[0][i], G=P[1][i], B=P[2][i], mx=Math.max(R,G,B), mn=Math.min(R,G,B), sat=mx>1?(mx-mn)/mx:0;
+    let dark=0, red=0;
+    if(den[i]>.2){ dark=Lb[i]/den[i]-L[i]; red=Rd[i]-Rb[i]/den[i]; }
+    const sc=Math.max(0,dark)+.8*Math.max(0,red);
+    if(inZ){
+      if(sat>.68&&R>G+40&&mx>50) cz[i]=1;            // saturated red / magenta / purple: kumkum, sindoor, coloured bindi
+      else if(den[i]>.2&&sc>55) dz[i]=1;             // clearly dark or maroon dot on skin (forehead texture and shine stay well below this)
+    } else if(sc>75&&fm.excB[i]<.3&&fm.face[i]>.5) so[i]=1;                 // not eyes / lips / nose tip; skin-surroundedness is checked per blob below
+  }
+  const fw2=fm.fw*fm.fw;
+  const add=(list,kind,bx0,by0,bx1,by1)=>{
+    for(const i of list) gb[i]=1;
+    marks.push({kind,x:(bx0+bx1)/2,y:(by0+by1)/2,r:Math.max(bx1-bx0,by1-by0)/2});
+  };
+  const shape=(list,bx0,by0,bx1,by1)=>{
+    const bw=bx1-bx0+1, bh=by1-by0+1;
+    return {a:list.length, asp:Math.max(bw,bh)/Math.min(bw,bh), fill:list.length/(bw*bh)};
+  };
+  /* forehead-zone candidates are ranked and capped: a face has at most ~2 bindi/tilak dots and 1 sindoor line */
+  const zc=[];
+  eachComp(cz,w,h,(list,bx0,by0,bx1,by1)=>{
+    const s=shape(list,bx0,by0,bx1,by1);
+    if(s.a<4||s.a>fw2*.03) return;
+    zc.push({list,bx0,by0,bx1,by1,kind:s.asp<=2.2?'bindi':'sindoor / tilak',score:s.a});
+  });
+  eachComp(dz,w,h,(list,bx0,by0,bx1,by1)=>{
+    const s=shape(list,bx0,by0,bx1,by1);
+    if(!(s.a>=4&&s.a<=fw2*.006&&s.asp<=2.2&&s.fill>=.5)) return;
+    let dk=0; for(const i of list) dk+=Math.max(0,Lb[i]/den[i]-L[i]);
+    zc.push({list,bx0,by0,bx1,by1,kind:'bindi',score:dk/20});
+  });
+  zc.sort((a,b)=>b.score-a.score);
+  const took={bindi:0,'sindoor / tilak':0}, lim={bindi:2,'sindoor / tilak':1}, got=[];
+  for(const c of zc){
+    if(took[c.kind]>=lim[c.kind]) continue;
+    const cx=(c.bx0+c.bx1)/2, cy=(c.by0+c.by1)/2, rr=Math.max(c.bx1-c.bx0,c.by1-c.by0)/2+4;
+    if(got.some(o=>Math.hypot(o[0]-cx,o[1]-cy)<(o[2]+rr)*1.2)) continue;   // overlaps one we already kept
+    got.push([cx,cy,rr]); took[c.kind]++;
+    add(c.list,c.kind,c.bx0,c.by0,c.bx1,c.by1);
+  }
+  /* moles / strong marks: must be clearly dark (or very contrasty), round, a sensible size and surrounded by skin; only the
+     strongest few per face are kept. Pores, shading and hair strands are weaker, smaller or less round and drop out. */
+  const sm=[];
+  eachComp(so,w,h,(list,bx0,by0,bx1,by1)=>{
+    const s=shape(list,bx0,by0,bx1,by1);
+    if(s.a<Math.max(8,fw2*.00005)||s.a>fw2*.004||s.asp>2.2||s.fill<.55) return;
+    let sD=0, sR=0, sDn=0;
+    for(const i of list){ sD+=Math.max(0,Lb[i]/den[i]-L[i]); sR+=Math.max(0,Rd[i]-Rb[i]/den[i]); sDn+=den[i]; }
+    if(sDn/s.a<.6) return;                                  // must be surrounded by skin: clothes, jewellery and hair edges are not
+    const mole=sD/s.a>=30&&.8*sR/s.a<.5*sD/s.a;             // dark and not red -> mole / beauty mark / kajal dot
+    if(!mole&&!(sD/s.a+.8*sR/s.a>=60)) return;               // a non-mole mark must be very strong (gem, stuck-on dot)
+    sm.push({list,bx0,by0,bx1,by1,kind:mole?'mole':'mark',score:(sD+.8*sR)/Math.sqrt(s.a)});
+  });
+  sm.sort((a,b)=>b.score-a.score);
+  let nMole=0, nMark=0;
+  for(const c of sm){
+    if(c.kind==='mole'){ if(!opt.keepMoles||nMole>=5) continue; nMole++; }
+    else{ if(!opt.keepMarks||nMark>=3) continue; nMark++; }
+    add(c.list,c.kind,c.bx0,c.by0,c.bx1,c.by1);
+  }
+}
+
+/* AUTO-HEAL: find small dark / red compact blobs on skin (not on eyes, brows, lips, nostrils) and fill them from clean neighbours.
+   Detection runs on a half-resolution grid (blemishes are many pixels wide), then each spot is filled at full resolution
+   inside a small window around it, so the cost no longer depends on how much skin is in the picture. */
+function autoHeal(P, w, h, gm, wt, amount, sens, spotsOut, gb, opt, marks){
+  const S=2, pad=Math.round(gm.fw*.9);                       // reach ears, forehead, neck, chest, shoulders and hands
+  const x0=Math.max(0,Math.floor(gm.x0-pad)), y0=Math.max(0,Math.floor(gm.y0-pad*.5));
+  const x1=Math.min(w,Math.ceil(gm.x1+pad)),   y1=Math.min(h,Math.ceil(gm.y1+pad*1.8));
+  const cw=Math.ceil((x1-x0)/S), ch=Math.ceil((y1-y0)/S), n=cw*ch;
+  const fwS=gm.fw/S, drF=Math.max(2,Math.round(gm.fw*.006)), dr=Math.max(1,Math.round(drF/S));
+  const L=new Float32Array(n), Rd=new Float32Array(n), wc=new Float32Array(n), gcrop=new Uint8Array(n);
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    let sl=0, sr=0, sw2=0, g=0, c=0;
+    for(let dy=0;dy<S;dy++){
+      const yy=y0+y*S+dy; if(yy>=y1) break;
+      for(let dx=0;dx<S;dx++){
+        const xx=x0+x*S+dx; if(xx>=x1) break;
+        const gi=yy*w+xx;
+        sl+=.299*P[0][gi]+.587*P[1][gi]+.114*P[2][gi]; sr+=P[0][gi]-P[1][gi]; sw2+=wt[gi]; if(gb[gi]) g=1; c++;
+      }
+    }
+    const i=y*cw+x; L[i]=sl/c; Rd[i]=sr/c; wc[i]=sw2/c; gcrop[i]=g;
+  }
+  const gbd=dilate(gcrop,cw,ch,dr+1);                        // protected marks, grown a little: never heal or sample from them
+  const Lw=new Float32Array(n), Rw=new Float32Array(n);
+  for(let i=0;i<n;i++){ Lw[i]=L[i]*wc[i]; Rw[i]=Rd[i]*wc[i]; }
+  const r=Math.max(2,Math.round(fwS*.03));
+  const den=box(wc,cw,ch,r), Lb=box(Lw,cw,ch,r), Rb=box(Rw,cw,ch,r);
+  const thr=30-.22*sens;                                    // sensitivity 0..100 -> 30..8 grey levels (50 = 19: catches faint marks)
+  /* per-pixel blemish strength (darker + redder than the skin around it), then averaged over a few pixels: a real spot is a
+     blob that stays strong when smoothed, pore noise is not. This lets faint marks through without catching texture. */
+  const sc=new Float32Array(n);
+  for(let i=0;i<n;i++) if(wc[i]>.85 && den[i]>.3){
+    const dark=Lb[i]/den[i]-L[i], red=Rd[i]-Rb[i]/den[i];
+    sc[i]=Math.max(0,dark)+.8*Math.max(0,red);
+  }
+  const ss=box(sc,cw,ch,Math.max(1,Math.round(fwS*.006)));
+  const cand=new Uint8Array(n);
+  for(let i=0;i<n;i++) if(wc[i]>.85 && den[i]>.3 && !gbd[i] && ss[i]>thr*.45) cand[i]=1;      // smoothed pore texture peaks at ~3, a faint real spot at ~17
+  /* connected components -> keep compact, blemish-sized ones (areas are in half-resolution pixels) */
+  const minA=Math.max(2,fwS*fwS*.00002), maxA=fwS*fwS*.0012;     // blemish-sized only: bigger blobs are shadows, folds, dark circles
+  const seen=new Uint8Array(n), stack=new Int32Array(n), kept=[];
+  for(let s0=0;s0<n;s0++){
+    if(!cand[s0]||seen[s0]) continue;
+    let sp=0, area=0, bx0=1e9,by0=1e9,bx1=-1,by1=-1, sx=0, sy=0, sD=0, sR=0, sDn=0, sS=0;
+    const list=[]; stack[sp++]=s0; seen[s0]=1;
+    while(sp){
+      const i=stack[--sp], x=i%cw, y=(i/cw)|0;
+      list.push(i); area++; sx+=x; sy+=y;
+      sD+=Math.max(0,Lb[i]/den[i]-L[i]); sR+=Math.max(0,Rd[i]-Rb[i]/den[i]); sDn+=den[i]; sS+=ss[i];
+      if(x<bx0)bx0=x; if(x>bx1)bx1=x; if(y<by0)by0=y; if(y>by1)by1=y;
+      if(x>0   &&cand[i-1] &&!seen[i-1]) {seen[i-1]=1;stack[sp++]=i-1;}
+      if(x<cw-1&&cand[i+1] &&!seen[i+1]) {seen[i+1]=1;stack[sp++]=i+1;}
+      if(y>0   &&cand[i-cw]&&!seen[i-cw]){seen[i-cw]=1;stack[sp++]=i-cw;}
+      if(y<ch-1&&cand[i+cw]&&!seen[i+cw]){seen[i+cw]=1;stack[sp++]=i+cw;}
+    }
+    const bw=bx1-bx0+1, bh=by1-by0+1;
+    if(area<minA||area>maxA||Math.max(bw,bh)>fwS*.05) continue;
+    if(Math.max(bw,bh)/Math.min(bw,bh)>2.6) continue;      // lines: hair, wrinkles
+    if(area/(bw*bh)<.4) continue;
+    if(sDn/area<.6) continue;                               // not surrounded by skin (clothes / jewellery edge): leave it alone
+    if(sS/area<thr*.55) continue;                           // average (smoothed) strength must clearly beat the threshold
+    const cx=x0+(sx/area+.5)*S, cy=y0+(sy/area+.5)*S, rad=Math.sqrt(area/Math.PI)*S;
+    if(opt.keepMoles && sD/area>=26 && .8*sR/area<.5*sD/area){   // dark, not red: a mole / beauty mark, not a blemish
+      for(const i of list){
+        const bx=x0+(i%cw)*S, by=y0+((i/cw)|0)*S;
+        for(let dy=0;dy<S;dy++) for(let dx=0;dx<S;dx++) if(bx+dx<w&&by+dy<h) gb[(by+dy)*w+bx+dx]=1;
+      }
+      marks.push({kind:'mole',x:cx,y:cy,r:rad});
+      continue;
+    }
+    if(kept.length>=300) continue;
+    kept.push({list,bx0,by0,bx1,by1});
+    spotsOut.push([cx,cy,rad]);
+  }
+  if(!kept.length) return 0;
+  /* fill each spot at full resolution in a window around it */
+  const maxAF=gm.fw*gm.fw*.0012, rf=Math.round(Math.sqrt(maxAF/Math.PI))+drF+4, shf=Math.round(rf*1.6), mg=Math.max(rf,shf)+3;
+  for(const k of kept){
+    const fx0=Math.max(0,x0+k.bx0*S-mg), fy0=Math.max(0,y0+k.by0*S-mg);
+    const fx1=Math.min(w,x0+(k.bx1+1)*S+mg), fy1=Math.min(h,y0+(k.by1+1)*S+mg);
+    const ww=fx1-fx0, wh=fy1-fy0, m=ww*wh;
+    const spot=new Uint8Array(m), gloc=new Uint8Array(m), wl=new Float32Array(m);
+    for(let y=0;y<wh;y++) for(let x=0;x<ww;x++){ const gi=(y+fy0)*w+(x+fx0); wl[y*ww+x]=wt[gi]; gloc[y*ww+x]=gb[gi]; }
+    for(const i of k.list){
+      const bx=x0+(i%cw)*S, by=y0+((i/cw)|0)*S;
+      for(let dy=0;dy<S;dy++) for(let dx=0;dx<S;dx++){
+        const xx=bx+dx-fx0, yy=by+dy-fy0;
+        if(xx>=0&&yy>=0&&xx<ww&&yy<wh) spot[yy*ww+xx]=1;
+      }
+    }
+    const dil=dilate(spot,ww,wh,drF), ex=dilate(spot,ww,wh,drF+2), gb2=dilate(gloc,ww,wh,drF+1);
+    const soft=new Float32Array(m), valid=new Float32Array(m);
+    for(let i=0;i<m;i++){ soft[i]=dil[i]; valid[i]=(ex[i]?0:1)*(wl[i]>.5?1:0)*(gb2[i]?0:1); }
+    const hm=box(soft,ww,wh,Math.max(1,drF>>1)), dd=box(valid,ww,wh,rf);   // fill radius must reach past the excluded blob
+    for(let c=0;c<3;c++){
+      const pc=new Float32Array(m), pv=new Float32Array(m);
+      for(let y=0;y<wh;y++) for(let x=0;x<ww;x++){ const i=y*ww+x; pc[i]=P[c][(y+fy0)*w+(x+fx0)]; pv[i]=pc[i]*valid[i]; }
+      const nm=box(pv,ww,wh,rf), sm=box(pc,ww,wh,2);
+      for(let y=0;y<wh;y++) for(let x=0;x<ww;x++){
+        const i=y*ww+x; if(hm[i]<.01||dd[i]<.02) continue;
+        const j=y*ww+(x+shf<ww?x+shf:Math.max(0,x-shf));          // borrow pore texture from clean skin next to it, so the fill isn't flat
+        const det=valid[j]>0?(pc[j]-sm[j])*.7:0;
+        const target=nm[i]/dd[i]+det;
+        P[c][(y+fy0)*w+(x+fx0)]+=(target-pc[i])*Math.min(1,hm[i])*amount;
+      }
+    }
+  }
+  return kept.length;
+}
+
+/* AUTO DODGE & BURN, part 1: even out — lift areas darker than their surroundings, calm hot spots */
+function evenLight(pl, w, h, fm, k){
+  const n=w*h, rS=Math.max(2,Math.round(fm.fw*.03)), rB=Math.max(6,Math.round(fm.fw*.22));
+  const L=new Float32Array(n), Lw=new Float32Array(n);
+  for(let i=0;i<n;i++){ L[i]=.299*pl[0][i]+.587*pl[1][i]+.114*pl[2][i]; Lw[i]=L[i]*fm.wt[i]; }
+  const dS=lowBlur(fm.wt,w,h,rS,2), dB=lowBlur(fm.wt,w,h,rB,4), nS=lowBlur(Lw,w,h,rS,2), nB=lowBlur(Lw,w,h,rB,4);   // smooth maps: low-res blurs
+  for(let i=0;i<n;i++){
+    const wt=fm.wt[i]; if(wt<.02) continue;
+    let dl=nB[i]/(dB[i]+1e-3)-nS[i]/(dS[i]+1e-3);
+    dl=Math.max(-25,Math.min(25,dl))*(dl>0?1:.5)*k*.8*wt;
+    const f=Math.max(.8,Math.min(1.25,(L[i]+dl)/Math.max(L[i],8)));   // scale, don't add: keeps hue and saturation
+    pl[0][i]*=f; pl[1][i]*=f; pl[2][i]*=f;
+  }
+}
+/* part 2: contour — landmark-guided light (dodge centre/under-eyes/chin, burn hollows/edges) */
+function contour(pl, w, h, fm, k){
+  const n=w*h;
+  for(let i=0;i<n;i++){
+    const wf=fm.wf[i]; if(wf<.02) continue;
+    const t=Math.max(-1,Math.min(1,fm.light[i]-.6*fm.edge[i]));
+    const a=1+t*k*(t>0?.22:.28)*wf;                          // gain, not "toward white": no grey cast
+    for(let c=0;c<3;c++) pl[c][i]*=a;
+  }
+}
+
+/* the whole global pipeline; used by the editor and by bulk */
+function process(src, r, faces, ug, segIn){
+  const w=src.width, h=src.height, n=w*h, d=src.data, sc=w/1000;
+  const rad=Math.max(1,Math.round(r.radius*sc));
+  const fineR=Math.max(1,Math.round(1.5*sc));
+  const eps=r.strength*r.strength+1;
+  const amt=r.amount/100, tex=r.texture/100;
+  const sg=(r.useSeg&&segIn)?segFor(segIn,src):null;              // AI skin / non-skin maps at this resolution
+  let mask=null;
+  if(r.skinOnly&&sg) mask=sg.skin;
+  else if(r.skinOnly){                                            // cached per source image: it never depends on the sliders
+    const mr=Math.max(2,Math.round(5*sc));
+    if(!src._sm||src._sm.r!==mr) src._sm={r:mr,m:skinMask(d,w,h,mr)};
+    mask=src._sm.m;
+  }
+  const glowR=Math.max(3,Math.round(w/45)), glow=r.glow/100*.6;
+  const out=new ImageData(w,h), od=out.data;
+  const P=[0,1,2].map(c=>{ const a=new Float32Array(n); for(let i=0;i<n;i++) a[i]=d[i*4+c]; return a; });
+  const info={faces:0,healed:0,spots:[],marks:[]};
+  let fm=null, fc=null;
+  if(faces&&faces.length&&(r.autoHeal>0||r.evenLight>0||r.contour>0||r.amount>0||r.glow>0)){
+    fc=src._fc;                                               // face masks only depend on the image + faces: build once
+    if(!fc||fc.faces!==faces||fc.sg!==sg){ fc={faces,sg,fm:buildFaceMasks(faces,w,h,d,sg),keys:{}}; src._fc=fc; }
+    fm={...fc.fm, wt:fc.fm.wt.slice(), wf:fc.fm.wf.slice()};   // wt/wf are modified below, so work on copies
+  }
+  let gb=null, guard=null;
+  if(fm||(ug&&ug.length)) gb=new Uint8Array(n);
+  if(fm){
+    info.faces=faces.length; info.region=fm.reg; info.ovals=fm.ovals; info.faceMask=fm.face;
+    const key=[r.keepBindi,r.keepMoles,r.keepMarks].join();
+    let mk=fc.keys[key];
+    if(!mk){ const g0=new Uint8Array(n), m0=[]; markGuard(P,w,h,fm,r,g0,m0); mk=fc.keys[key]={gb:g0,marks:m0}; }
+    gb.set(mk.gb); info.marks.push(...mk.marks);
+  }
+  if(ug) for(const u of ug){                                  // manual protect circles
+    for(let y=Math.max(0,Math.floor(u.y-u.r));y<=Math.min(h-1,Math.ceil(u.y+u.r));y++)
+      for(let x=Math.max(0,Math.floor(u.x-u.r));x<=Math.min(w-1,Math.ceil(u.x+u.r));x++)
+        if(Math.hypot(x-u.x,y-u.y)<=u.r) gb[y*w+x]=1;
+    info.marks.push({kind:'user',x:u.x,y:u.y,r:u.r});
+  }
+  if(fm&&r.autoHeal>0) fm.geoms.forEach(gm=>{ info.healed+=autoHeal(P,w,h,gm,fm.wt,r.autoHeal/100,r.healSens,info.spots,gb,r,info.marks); });
+  if(gb){                                                     // soft "do not touch" map used by every later step
+    const gr=Math.max(2,Math.round((fm?fm.fw:w*.3)*.008));
+    const dl=dilate(gb,w,h,gr), fl=new Float32Array(n);
+    for(let i=0;i<n;i++) fl[i]=dl[i];
+    guard=box(fl,w,h,Math.max(1,gr>>1));
+    if(fm) for(let i=0;i<n;i++){ fm.wt[i]*=1-guard[i]; fm.wf[i]*=1-guard[i]; }
+  }
+  const feat=(fm&&r.keepFeatures)?fm.exc:null;                  // eyes, brows, lips (grown): never smoothed or glowed
+  const planes=[];
+  /* smoothed + fine-detail planes depend only on radius/strength (and on nothing healed), so Amount/Texture/Glow/Tone reuse them */
+  const healSig=info.spots.length?(r.autoHeal+':'+info.spots.map(q=>q[0]|0).join(',')+':'+info.spots.map(q=>q[1]|0).join(',')):'';   // same heal result => same pixels
+  const sfKey=rad+','+eps+','+fineR+'|'+healSig;
+  const sfOld=(src._sf&&src._sf.key===sfKey)?src._sf:null;
+  const sfNew=sfOld?null:{key:sfKey,S:[],F:[]};
+  for(let c=0;c<3;c++){
+    const I=P[c];
+    let R=I;
+    if(amt>0){
+      let S,F;
+      if(sfOld){ S=sfOld.S[c]; F=sfOld.F[c]; }
+      else { S=guided(I,w,h,rad,eps); F=box(I,w,h,fineR); if(sfNew){ sfNew.S[c]=S; sfNew.F[c]=F; } }
+      R=new Float32Array(n);
+      for(let i=0;i<n;i++){
+        const m=(mask?mask[i]:1)*amt*(guard?1-guard[i]:1)*(feat?1-feat[i]:1);
+        const target=S[i]+(I[i]-F[i])*tex;
+        R[i]=I[i]+(target-I[i])*m;
+      }
+    }
+    if(glow>0){
+      const B=lowBlur(R,w,h,glowR,4,2);
+      for(let i=0;i<n;i++){
+        const m=(mask?mask[i]:1)*glow*(guard?1-guard[i]:1)*(feat?1-feat[i]:1);
+        const scr=255-(255-R[i])*(255-B[i])/255;
+        R[i]+= (scr-R[i])*m;
+      }
+    }
+    planes.push(R);
+  }
+  if(sfNew&&amt>0) src._sf=sfNew;
+  if(fm){
+    if(r.evenLight>0) evenLight(planes,w,h,fm,r.evenLight/100);
+    if(r.contour>0)   contour(planes,w,h,fm,r.contour/100);
+  }
+  if(r.teeth>0&&faces&&faces.length){                           // whitening: teeth only (mouth opening x tooth colour)
+    const tz=teethZone(src,faces), k=r.teeth/100;
+    for(let i=0;i<n;i++){
+      if(tz[i]<.01) continue;
+      const R0=planes[0][i], G0=planes[1][i], B0=planes[2][i];
+      const a=tz[i]*toothGate(R0,G0,B0)*k;
+      if(a<.004) continue;
+      const l=.299*R0+.587*G0+.114*B0;
+      const bl=Math.min(255,B0+(l-B0)*a*.9);                    // pull the yellow out (blue channel up), then lift
+      const f=1+a*.22;
+      planes[0][i]=(R0+(l-R0)*a*.5)*f; planes[1][i]=(G0+(l-G0)*a*.5)*f; planes[2][i]=bl*f;
+    }
+    info.teethZone=tz;
+  }
+  const wm=r.warmth*.2, br=r.bright*1.2;
+  for(let i=0,p=0;i<n;i++,p+=4){
+    od[p]  =planes[0][i]+wm+br;
+    od[p+1]=planes[1][i]+br;
+    od[p+2]=planes[2][i]-wm+br;
+    od[p+3]=255;
+  }
+  return {img:out, mask, info};
+}
+
+/* ---------- brushes ---------- */
+const TOOLS = {
+  move:  {k:'V',ico:'✥',label:'Move',mul:0,  hint:'Select / move: drag to pan the photo, mouse wheel to zoom. Nothing is painted. Hold Space with any brush for the same hand.'},
+  soften:{k:'S',ico:'◔',label:'Soften',mul:.5, hint:'Blurs toward a smoothed copy — good for shine and uneven skin.'},
+  dodge: {k:'D',ico:'☀',label:'Dodge',mul:.12,hint:'Lightens. Paint under-eye shadows and nasolabial folds at low strength.'},
+  burn:  {k:'B',ico:'◐',label:'Burn',mul:.12,hint:'Darkens. Add shape to cheekbones / jaw or tone down hot spots.'},
+  heal:  {k:'H',ico:'✚',label:'Heal',mul:.9, hint:'Copies texture from the source spot, keeps your local colour. Alt+click (or “Pick heal source”) sets the source.'},
+  whiten:{k:'W',ico:'✧',label:'Whiten',mul:.15,hint:'Whitens teeth only: lips, gums, tongue and eyes are masked out. Paint over the mouth; needs a detected face.'},
+  guard: {k:'G',ico:'⛨',label:'Guard',mul:0,  hint:'Click a bindi, mole or any mark to protect it from ALL auto retouch (circle = brush size). Click the circle again to remove it.'}
+};
+
+function dab(s, px, py){
+  const w=W, h=H, R=s.size/2, D=cur.data, B=base.data, mul=TOOLS[s.tool].mul;
+  const tzone=s.tool==='whiten'?teethZone(orig,faces):null;
+  const x0=Math.max(0,Math.floor(px-R)), x1=Math.min(w-1,Math.ceil(px+R));
+  const y0=Math.max(0,Math.floor(py-R)), y1=Math.min(h-1,Math.ceil(py+R));
+  for(let y=y0;y<=y1;y++){
+    for(let x=x0;x<=x1;x++){
+      const t=Math.hypot(x-px,y-py)/R;
+      if(t>1) continue;
+      let f=1;
+      if(t>s.hard){const u=(t-s.hard)/(1-s.hard); f=1-u*u*(3-2*u);}
+      let a=Math.min(1,f*s.strength*mul);
+      if(a<=0.002) continue;
+      const pi=y*w+x, i=pi*4;
+      switch(s.tool){
+        case 'soften':
+          for(let c=0;c<3;c++) D[i+c]+=(blurPl[c][pi]-D[i+c])*a;
+          break;
+        case 'dodge':
+          for(let c=0;c<3;c++) D[i+c]+=(255-D[i+c])*a;
+          break;
+        case 'burn':
+          for(let c=0;c<3;c++) D[i+c]*=1-a;
+          break;
+        case 'heal': {
+          const sx=Math.min(w-1,Math.max(0,Math.round(x+s.ox))), sy=Math.min(h-1,Math.max(0,Math.round(y+s.oy)));
+          const sp=sy*w+sx;
+          for(let c=0;c<3;c++){
+            const detail=B[sp*4+c]-blurPl[c][sp];
+            const target=blurPl[c][pi]+detail;
+            D[i+c]+=(target-D[i+c])*a;
+          }
+          break;
+        }
+        case 'whiten': {
+          if(!tzone) break;                                        // teeth only: needs a detected face
+          const gate=tzone[pi]*toothGate(D[i],D[i+1],D[i+2]);
+          if(gate<.01) break;
+          a*=gate;
+          const l=.299*D[i]+.587*D[i+1]+.114*D[i+2];
+          for(let c=0;c<3;c++){
+            let v=D[i+c]+(l-D[i+c])*a*3;
+            v+=(255-v)*a*1.6;
+            D[i+c]=v;
+          }
+          break;
+        }
+      }
+    }
+  }
+}
+function seg(s,a,b){
+  const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
+  const step=Math.max(1,s.size*.18), n=Math.max(1,Math.ceil(len/step));
+  for(let k=1;k<=n;k++) dab(s,a[0]+dx*k/n,a[1]+dy*k/n);
+}
+function replay(){
+  for(const s of strokes){
+    dab(s,s.pts[0][0],s.pts[0][1]);
+    for(let i=1;i<s.pts.length;i++) seg(s,s.pts[i-1],s.pts[i]);
+  }
+}
+
+/* ---------- pipeline glue ---------- */
+/* Two-speed updates: while a slider moves, a small (640 px) preview is processed and stretched over the canvas;
+   the full-quality rebuild (with brush strokes) runs once the controls have been still for a moment. */
+const PREVIEW_MAX=560, FULL_DELAY=600;
+let smallData=null, sw=0, sh=0, pvTimer=0, fullTimer=0;
+const pvCanvas=document.createElement('canvas');
+let pendingFull=false;
+function schedule(){
+  markPreset();
+  if(!orig) return;                                          // no photo yet: just remember the settings
+  pendingFull=true;
+  clearTimeout(fullTimer); fullTimer=setTimeout(rebuild,FULL_DELAY);
+  if(!pvTimer) pvTimer=setTimeout(()=>{ pvTimer=0; preview(); },40);
+  $('#status').textContent='Updating…';
+}
+function preview(){
+  if(!smallData||showOrig) return;
+  const t0=performance.now();
+  const r=process(smallData,recipe,faces,userGuards.map(u=>({x:u.x*sw,y:u.y*sw,r:u.r*sw})),segMap);
+  pvCanvas.width=sw; pvCanvas.height=sh;
+  pvCanvas.getContext('2d').putImageData(r.img,0,0);
+  ctx.drawImage(pvCanvas,0,0,W,H);
+  $('#status').textContent=`preview ${Math.round(performance.now()-t0)} ms · full quality follows when you pause`;
+}
+
+/* brush blur (used by Soften and Heal) and the overlay canvases are built lazily: most edits never need them */
+let ovDirty=true;
+function ensureBlur(){
+  if(blurPl||!base) return;
+  const rad=Math.max(2,Math.round(6*W/1000));
+  blurPl=[0,1,2].map(c=>{
+    const p=new Float32Array(W*H);
+    for(let i=0;i<p.length;i++) p[i]=base.data[i*4+c];
+    return box(p,W,H,rad);
+  });
+}
+function buildOverlays(){
+  ovDirty=false;
+  edgeCanvas=null;                                            // the real face edge (what the retouch treats as "face"), drawn as a line
+  if(lastInfo.faceMask){
+    const m=lastInfo.faceMask, ei=new ImageData(W,H), e=ei.data;
+    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+      const i=y*W+x;
+      if(m[i]>.5&&(m[i-1]<=.5||m[i+1]<=.5||m[i-W]<=.5||m[i+W]<=.5)){
+        for(const j of [i,i+1,i+W]){ e[j*4]=95; e[j*4+1]=199; e[j*4+2]=154; e[j*4+3]=255; }
+      }
+    }
+    edgeCanvas=document.createElement('canvas'); edgeCanvas.width=W; edgeCanvas.height=H;
+    edgeCanvas.getContext('2d').putImageData(ei,0,0);
+  }
+  regionCanvas=null;
+  if(lastInfo.region){
+    const ri=new ImageData(W,H), rg=lastInfo.region;
+    for(let i=0;i<rg.length;i++){const p=i*4; ri.data[p]=95; ri.data[p+1]=199; ri.data[p+2]=154; ri.data[p+3]=rg[i]*90;}
+    regionCanvas=document.createElement('canvas'); regionCanvas.width=W; regionCanvas.height=H;
+    regionCanvas.getContext('2d').putImageData(ri,0,0);
+  }
+  maskCanvas=null;
+  if(maskF){
+    const mi=new ImageData(W,H);
+    for(let i=0;i<maskF.length;i++){const p=i*4; mi.data[p]=255; mi.data[p+1]=60; mi.data[p+2]=90; mi.data[p+3]=maskF[i]*150;}
+    maskCanvas=document.createElement('canvas'); maskCanvas.width=W; maskCanvas.height=H;
+    maskCanvas.getContext('2d').putImageData(mi,0,0);
+  }
+}
+
+function rebuild(){
+  if(!orig) return;
+  clearTimeout(fullTimer); clearTimeout(pvTimer); pvTimer=0; pendingFull=false;
+  const t0=performance.now();
+  const r=process(orig,recipe,faces,userGuards.map(u=>({x:u.x*W,y:u.y*W,r:u.r*W})),segMap);
+  base=r.img; maskF=r.mask; lastInfo=r.info;
+  blurPl=null; ovDirty=true; edgeCanvas=regionCanvas=maskCanvas=null;   // brush blur + overlay canvases are built on demand
+  if(strokes.length) ensureBlur();
+  cur=new ImageData(new Uint8ClampedArray(base.data),W,H);
+  replay();
+  render();
+  setStatus(`rebuilt in ${Math.round(performance.now()-t0)} ms`);
+}
+
+let raf=0;
+function render(){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0; draw();}); }
+function draw(){
+  if(!cur) return;
+  if(ovDirty&&($('#showMask').checked||$('#showDetect').checked)) buildOverlays();
+  ctx.putImageData(showOrig?orig:cur,0,0);
+  if($('#showMask').checked && maskCanvas && !showOrig) ctx.drawImage(maskCanvas,0,0);
+  if($('#showDetect').checked && !showOrig){
+    if(regionCanvas) ctx.drawImage(regionCanvas,0,0);
+    ctx.save(); ctx.lineWidth=Math.max(1.5,W/700); ctx.strokeStyle='#5fc79a';
+    if(edgeCanvas) ctx.drawImage(edgeCanvas,0,0);            // true face edge
+    else{
+      const ov=lastInfo.ovals||faces.map(lm=>OVAL.map(k=>[lm[k].x*W,lm[k].y*H]));
+      for(const pts of ov){
+        ctx.beginPath(); pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
+      }
+    }
+    ctx.strokeStyle='#ff7a9a';                               // masked out of smoothing: eyes, brows, lips
+    for(const lm of faces) for(const ix of [LEYE,REYE,LBROW,RBROW,LIPS]){
+      ctx.beginPath(); ix.forEach((k,i)=>{const x=lm[k].x*W,y=lm[k].y*H; i?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.closePath(); ctx.stroke();
+    }
+    if(lastInfo.teethZone){                                  // where whitening may act
+      const tz=lastInfo.teethZone, ti=ctx.getImageData(0,0,W,H), td=ti.data;
+      for(let i=0;i<tz.length;i++) if(tz[i]>.05){ const p=i*4, a=tz[i]*toothGate(td[p],td[p+1],td[p+2])*.6; td[p]+=(79-td[p])*a; td[p+1]+=(216-td[p+1])*a; td[p+2]+=(255-td[p+2])*a; }
+      ctx.putImageData(ti,0,0);
+    }
+    ctx.strokeStyle='#e8b04a';
+    for(const s of lastInfo.spots){ ctx.beginPath(); ctx.arc(s[0],s[1],s[2]+3,0,6.283); ctx.stroke(); }
+    ctx.strokeStyle='#4fd8ff'; ctx.fillStyle='#4fd8ff'; ctx.font=`${Math.max(12,Math.round(W/80))}px sans-serif`; ctx.textAlign='center';
+    for(const m of lastInfo.marks){
+      const rr=Math.max(6,m.r+4);
+      ctx.beginPath(); ctx.arc(m.x,m.y,rr,0,6.283); ctx.stroke();
+      ctx.fillText(m.kind,m.x,m.y-rr-4);
+    }
+    ctx.restore();
+  }
+}
+$('#showDetect').onchange=()=>draw();
+function setStatus(extra){
+  const fmsg=(faceMsg||`${faces.length} face${faces.length===1?'':'s'}, ${lastInfo.healed} spot${lastInfo.healed===1?'':'s'} healed`)
+            +(segMap&&recipe.useSeg?' · AI skin mask':' · colour skin mask');
+  $('#status').textContent=`${W}×${H} · ${fmsg} · ${strokes.length} stroke${strokes.length===1?'':'s'}${extra?' · '+extra:''}`;
+  $('#btnUndo').disabled=$('#btnClear').disabled=!strokes.length;
+  updateDet();
+}
+
+/* ---------- loading ---------- */
+async function fitBitmap(bm, maxDim){
+  const sc=Math.min(1,maxDim/Math.max(bm.width,bm.height));
+  const w=Math.round(bm.width*sc), h=Math.round(bm.height*sc);
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const g=c.getContext('2d',{willReadFrequently:true});
+  g.drawImage(bm,0,0,w,h);
+  return {c,g,w,h};
+}
+let lastFile=null;
+$('#resEdit').onchange=e=>{
+  const v=+e.target.value;
+  if(strokes.length&&!confirm('Changing the working size reloads the photo and clears your brush strokes. Continue?')){ e.target.value=EDIT_MAX; return; }
+  EDIT_MAX=v; if(lastFile) loadFile(lastFile);
+};
+$('#resBulk').onchange=e=>{ BATCH_MAX=+e.target.value; };
+async function loadFile(f){
+  if(!f) return;
+  lastFile=f;
+  try{
+    const bm=await createImageBitmap(f,{imageOrientation:'from-image'});
+    const o=await fitBitmap(bm,EDIT_MAX);
+    W=o.w; H=o.h; cv.width=W; cv.height=H;
+    orig=o.g.getImageData(0,0,W,H);
+    const psc=Math.min(1,PREVIEW_MAX/Math.max(W,H)); sw=Math.round(W*psc); sh=Math.round(H*psc);
+    const pc=document.createElement('canvas'); pc.width=sw; pc.height=sh;
+    const pg=pc.getContext('2d',{willReadFrequently:true}); pg.drawImage(o.c,0,0,sw,sh);
+    smallData=pg.getImageData(0,0,sw,sh);
+    name=f.name.replace(/\.[^.]+$/,'');
+    strokes=[]; userGuards=[]; segMap=null; healOff=null; healSrc=null; faces=[]; lastInfo={faces:0,healed:0,spots:[]}; faceMsg='detecting faces…';
+    $('#drop').classList.add('hide');
+    ['btnExport','btnCompare','zFit','z1','z2','zoomSlider'].forEach(id=>$('#'+id).disabled=false);
+    setZoom('fit');
+    base=orig; cur=new ImageData(new Uint8ClampedArray(orig.data),W,H); ovDirty=true; draw();     // show the photo at once; one full build follows the analysis
+    $('#status').textContent=`${W}×${H} · analysing faces and skin…`;
+    const mine=orig;
+    const [fr,sr]=await Promise.all([
+      detectFaces(o.c).then(f=>({f}),err=>({f:[],err})),
+      segmentImage(o.c)]);
+    if(mine!==orig) return;
+    faces=fr.f; segMap=sr;
+    if(!faces.length&&sr){ try{ faces=await detectSmallFaces(o.c,sr); }catch(err){} }          // small faces in full-body shots
+    if(mine!==orig) return;
+    faceMsg=fr.err?'face model unavailable (offline?)':(faces.length?'':'no face found');
+    rebuild();
+  }catch(e){ $('#status').textContent='Could not open this file ('+e.message+')'; }
+}
+$('#file').onchange=e=>loadFile(e.target.files[0]);
+const stage=$('#stage'), drop=$('#drop');
+stage.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
+stage.addEventListener('dragleave',()=>drop.classList.remove('over'));
+stage.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');loadFile(e.dataTransfer.files[0]);});
+
+/* ---------- zoom ---------- */
+const zs=$('#zoomSlider'), zp=$('#zoomPct');
+const fitScale=()=>Math.min(1,(stage.clientWidth-26)/W,(stage.clientHeight-26)/H);
+function applyScale(s){
+  s=Math.max(.05,Math.min(8,s));
+  cv.style.width=Math.round(W*s)+'px'; cv.style.height=Math.round(H*s)+'px';
+  zs.value=Math.round(s*100); zp.textContent=Math.round(s*100)+'%';
+}
+function setZoom(z){
+  zoom=z;
+  applyScale(z==='fit'?fitScale():z);
+}
+/* zoom keeping the image point under (cx,cy) fixed */
+function zoomAt(s, cx, cy){
+  const r=cv.getBoundingClientRect();
+  const px=Math.max(0,Math.min(1,(cx-r.left)/r.width)), py=Math.max(0,Math.min(1,(cy-r.top)/r.height));
+  zoom=Math.max(.05,Math.min(8,s));
+  applyScale(zoom);
+  const r2=cv.getBoundingClientRect();
+  stage.scrollLeft+=(r2.left+px*r2.width)-cx; stage.scrollTop+=(r2.top+py*r2.height)-cy;
+}
+/* mouse wheel = zoom at the cursor (Shift+wheel scrolls sideways) */
+stage.addEventListener('wheel',e=>{
+  if(!orig) return;
+  if(e.shiftKey) return;
+  e.preventDefault();
+  const cur=cv.getBoundingClientRect().width/W;
+  zoomAt(cur*Math.exp(-e.deltaY*.0015), e.clientX, e.clientY);
+},{passive:false});
+zs.oninput=()=>{ const r=stage.getBoundingClientRect(); zoomAt(zs.value/100, r.left+r.width/2, r.top+r.height/2); };
+$('#zFit').onclick=()=>setZoom('fit'); $('#z1').onclick=()=>setZoom(1); $('#z2').onclick=()=>setZoom(2);
+addEventListener('resize',()=>{ if(orig&&zoom==='fit') setZoom('fit'); });
+
+/* ---------- pointer / painting ---------- */
+const ring=$('#ring'), srcRing=$('#srcRing'), holder=$('#holder');
+let drawing=null;
+function toImg(e){
+  const r=cv.getBoundingClientRect();
+  return [(e.clientX-r.left)*W/r.width,(e.clientY-r.top)*H/r.height, r.width/W];
+}
+function placeRing(el,x,y,k,size){
+  el.style.display='block';
+  el.style.left=(x*k)+'px'; el.style.top=(y*k)+'px';
+  el.style.width=el.style.height=(size*k)+'px';
+}
+cv.addEventListener('pointerdown',e=>{
+  if(!orig) return;
+  if(tool==='move'||spaceDown){                              // hand: drag to pan, never paints
+    cv.setPointerCapture(e.pointerId);
+    pan={x:e.clientX,y:e.clientY,l:stage.scrollLeft,t:stage.scrollTop}; cv.style.cursor='grabbing'; return;
+  }
+  const [x,y]=toImg(e);
+  if(tool==='guard'){                                   // toggle a protect circle
+    const hit=userGuards.findIndex(u=>Math.hypot(u.x*W-x,u.y*W-y)<=Math.max(u.r*W,8));
+    if(hit>=0) userGuards.splice(hit,1); else userGuards.push({x:x/W,y:y/W,r:brush.size/2/W});
+    rebuild(); return;
+  }
+  if(tool==='heal' && (e.altKey||pickingSrc)){
+    healSrc=[x,y]; pickingSrc=false; $('#btnPick').textContent='Pick heal source…';
+    healOff=null; setStatus('heal source set — paint on the blemish'); return;
+  }
+  if(tool==='heal' && healSrc){ healOff=[healSrc[0]-x, healSrc[1]-y]; healSrc=null; }
+  cv.setPointerCapture(e.pointerId);
+  ensureBlur();
+  const off=healOff||[Math.round(brush.size*1.6),0];
+  drawing={tool,size:brush.size,hard:brush.hard,strength:brush.strength,ox:off[0],oy:off[1],pts:[[x,y]]};
+  dab(drawing,x,y); render();
+});
+cv.addEventListener('pointermove',e=>{
+  if(!orig) return;
+  if(pan){ stage.scrollLeft=pan.l-(e.clientX-pan.x); stage.scrollTop=pan.t-(e.clientY-pan.y); return; }
+  if(tool==='move'||spaceDown){ ring.style.display='none'; srcRing.style.display='none'; return; }
+  const [x,y,k]=toImg(e);
+  placeRing(ring,x,y,k,brush.size);
+  if(tool==='heal'){
+    const off=drawing?[drawing.ox,drawing.oy]:(healOff||[Math.round(brush.size*1.6),0]);
+    placeRing(srcRing,x+off[0],y+off[1],k,brush.size);
+  } else srcRing.style.display='none';
+  if(drawing){
+    const last=drawing.pts[drawing.pts.length-1];
+    drawing.pts.push([x,y]); seg(drawing,last,[x,y]); render();
+  }
+});
+function endStroke(){
+  if(pan){ pan=null; updateCursor(); return; }
+  if(!drawing) return;
+  strokes.push(drawing); drawing=null; setStatus('');
+}
+cv.addEventListener('pointerup',endStroke);
+cv.addEventListener('pointercancel',endStroke);
+cv.addEventListener('pointerleave',()=>{ if(!drawing){ring.style.display='none';srcRing.style.display='none';} });
+
+function undo(){ if(!strokes.length){ if(userGuards.length){ userGuards.pop(); rebuild(); } return; } strokes.pop(); cur=new ImageData(new Uint8ClampedArray(base.data),W,H); replay(); render(); setStatus(''); }
+$('#btnUndo').onclick=undo;
+$('#btnClear').onclick=()=>{ strokes=[]; cur=new ImageData(new Uint8ClampedArray(base.data),W,H); render(); setStatus(''); };
+$('#btnPick').onclick=()=>{ pickingSrc=!pickingSrc; setTool('heal'); $('#btnPick').textContent=pickingSrc?'Click the photo to pick…':'Pick heal source…'; };
+
+/* compare */
+const cmpOn=v=>{ if(!orig) return; showOrig=v; draw(); };
+const bc=$('#btnCompare');
+bc.addEventListener('pointerdown',()=>cmpOn(true));
+['pointerup','pointerleave'].forEach(t=>bc.addEventListener(t,()=>cmpOn(false)));
+
+/* ---------- UI build ---------- */
+function mkSlider(host, key, label, min, max, step, get, set){
+  const row=document.createElement('div'); row.className='srow';
+  row.innerHTML=`<div class="shead"><label>${label}</label><button class="srst" title="Reset to default">\u21BA</button><input class="snum" type="number" min="${min}" max="${max}" step="${step}"></div><input type="range" min="${min}" max="${max}" step="${step}">`;
+  const rng=row.querySelector('input[type=range]'), num=row.querySelector('.snum'), def=get();   // value at creation = the default
+  const paint=()=>{ const v=get(); rng.value=v; num.value=v; row.classList.toggle('mod',v!==def); };
+  const apply=v=>{ v=Math.max(min,Math.min(max,Math.round(+v/step)*step)); if(Number.isNaN(v)) return paint(); set(v); paint(); };
+  rng.oninput=()=>apply(rng.value);
+  num.onchange=()=>{ if(num.value.trim()==='') return paint(); apply(num.value); };   // empty box: keep the old value
+  row.querySelector('.srst').onclick=()=>apply(def);
+  rng.title='Double-click to reset'; rng.addEventListener('dblclick',()=>apply(def));
+  row.querySelector('label').addEventListener('dblclick',()=>apply(def));
+  row._sync=paint; paint();
+  $('#'+host).appendChild(row);
+  return row;
+}
+const recipeRows=[];
+for(const [host,list] of Object.entries(SLIDERS))
+  for(const [k,l,mn,mx,st] of list)
+    recipeRows.push(mkSlider(host,k,l,mn,mx,st,()=>recipe[k],v=>{recipe[k]=v;schedule();}));
+
+mkSlider('gBrush','size','Size (px)',8,260,1,()=>brush.size,v=>brush.size=v);
+mkSlider('gBrush','hard','Hardness (%)',0,95,1,()=>Math.round(brush.hard*100),v=>brush.hard=v/100);
+mkSlider('gBrush','str','Strength (%)',5,100,1,()=>Math.round(brush.strength*100),v=>brush.strength=v/100);
+const brushRows=[...document.querySelectorAll('#gBrush .srow')];
+
+/* tabs (remember the last one) */
+const ptabs=[...document.querySelectorAll('.ptabs button')], panes=[...document.querySelectorAll('.pane')];
+function showTab(n){
+  ptabs.forEach(b=>b.classList.toggle('on',b.dataset.tab===n));
+  panes.forEach(p=>p.classList.toggle('on',p.dataset.pane===n));
+  try{ localStorage.setItem('ps_tab',n); }catch(e){}
+}
+ptabs.forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+let startTab='adjust'; try{ startTab=localStorage.getItem('ps_tab')||'adjust'; }catch(e){}
+showTab(['adjust','auto','brush','export'].includes(startTab)?startTab:'adjust');
+
+/* live detection pills */
+function updateDet(){
+  const el=$('#det'); if(!el) return;
+  const pill=(t,c)=>`<span class="pill ${c||''}">${t}</span>`, n=lastInfo.marks?lastInfo.marks.length:0;
+  el.innerHTML=[
+    faces.length?pill(`${faces.length} face${faces.length>1?'s':''} found`,'ok'):pill(faceMsg||'no image','warn'),
+    segMap&&recipe.useSeg?pill('AI skin mask','ok'):pill('colour skin mask','warn'),
+    pill(`${lastInfo.healed} spot${lastInfo.healed===1?'':'s'} healed`,lastInfo.healed?'ok':''),
+    pill(`${n} protected`,n?'ok':'')].join('');
+}
+updateDet();
+
+$('#skinOnly').onchange=e=>{recipe.skinOnly=e.target.checked;schedule();};
+$('#showMask').onchange=()=>draw();
+['keepBindi','keepMoles','keepMarks','useSeg','keepFeatures'].forEach(k=>$('#'+k).onchange=e=>{ recipe[k]=e.target.checked; schedule(); });
+
+const presetBtns={};
+for(const [n,p] of Object.entries(PRESETS)){
+  const b=document.createElement('button'); b.textContent=n; presetBtns[n]=b;
+  b.onclick=()=>{ Object.assign(recipe,p); recipeRows.forEach(r=>r._sync()); schedule(); };
+  $('#presets').appendChild(b);
+}
+function markPreset(){
+  for(const [n,p] of Object.entries(PRESETS)) presetBtns[n].classList.toggle('on',Object.keys(p).every(k=>recipe[k]===p[k]));
+}
+markPreset();
+$('#btnResetAll').onclick=()=>{
+  Object.assign(recipe,DEFAULT); recipeRows.forEach(r=>r._sync());
+  ['skinOnly','useSeg','keepBindi','keepMoles','keepMarks','keepFeatures'].forEach(id=>{ $('#'+id).checked=recipe[id]; });
+  schedule();
+};
+
+const rail=$('#rail');
+function updateCursor(){ cv.style.cursor=(tool==='move'||spaceDown)?'grab':'none'; }
+function setTool(t){
+  tool=t; updateCursor();
+  if(t==='move'){ ring.style.display='none'; srcRing.style.display='none'; }
+  $('#gBrush').style.display=t==='move'?'none':'';
+  [...rail.querySelectorAll('button[data-t]')].forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  $('#brushHint').textContent=TOOLS[t].hint;
+  $('#toolIco').textContent=TOOLS[t].ico; $('#toolName').textContent=TOOLS[t].label+' ('+TOOLS[t].k+')';
+  $('#btnPick').style.display=t==='heal'?'block':'none';
+  if(t!=='heal') srcRing.style.display='none';
+}
+for(const [t,o] of Object.entries(TOOLS)){
+  const b=document.createElement('button'); b.dataset.t=t;
+  b.innerHTML=`<b>${o.ico}</b>${o.label}`; b.title=`${o.label} (${o.k})`;
+  b.onclick=()=>{ setTool(t); if(t!=='move') showTab('brush'); }; rail.appendChild(b);
+}
+setTool('move');                                             // like other pro editors: start with the Move/Hand tool, nothing paints until you pick a brush
+
+addEventListener('keydown',e=>{
+  const tg=e.target;
+  if(tg.tagName==='TEXTAREA'||tg.tagName==='SELECT'||(tg.tagName==='INPUT'&&['text','number','search'].includes(tg.type))) return;
+  const k=e.key.toLowerCase();
+  if(e.key===' '){ e.preventDefault(); if(!spaceDown){ spaceDown=true; updateCursor(); ring.style.display='none'; srcRing.style.display='none'; } return; }
+  if((e.ctrlKey||e.metaKey)&&k==='z'){e.preventDefault();undo();return;}
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  for(const [t,o] of Object.entries(TOOLS)) if(o.k.toLowerCase()===k) setTool(t);
+  if(k==='['||k===']'){
+    brush.size=Math.max(8,Math.min(260,brush.size+(k===']'?8:-8)));
+    brushRows[0]._sync();
+  }
+  if(k==='\\') cmpOn(true);
+});
+addEventListener('keyup',e=>{ if(e.key==='\\') cmpOn(false); if(e.key===' '){ spaceDown=false; updateCursor(); } });
+
+/* ---------- export / recipe ---------- */
+function download(blob, fname){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+$('#btnExport').onclick=()=>{
+  if(pendingFull) rebuild();                                 // don't export a half-updated preview
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  c.getContext('2d').putImageData(cur,0,0);
+  c.toBlob(b=>download(b,name+'_edited.jpg'),'image/jpeg',.95);
+};
+$('#btnCopy').onclick=async()=>{
+  const txt=JSON.stringify({version:1,...recipe},null,2);
+  try{ await navigator.clipboard.writeText(txt); setStatus('recipe copied'); }
+  catch{ prompt('Recipe JSON',txt); }
+};
+
+/* ---------- bulk ---------- */
+let bulk=[];
+$('#bulkFiles').onchange=e=>{
+  bulk=[...e.target.files];
+  $('#bulkInfo').textContent=bulk.length?`${bulk.length} photo${bulk.length>1?'s':''} chosen.`:'No photos chosen.';
+  $('#btnBulk').disabled=!bulk.length;
+};
+function loadJSZip(){
+  return new Promise((res,rej)=>{
+    if(window.JSZip) return res();
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload=res; s.onerror=()=>rej(new Error('could not load JSZip (offline?)'));
+    document.head.appendChild(s);
+  });
+}
+const toBlob=(c,q)=>new Promise(r=>c.toBlob(r,'image/jpeg',q));
+$('#btnBulk').onclick=async()=>{
+  const prog=$('#bulkProg'), btn=$('#btnBulk'), info=$('#bulkInfo');
+  btn.disabled=true; prog.style.display='block'; prog.max=bulk.length; prog.value=0;
+  let dir=null, zip=null;
+  try{
+    if(window.showDirectoryPicker){
+      const parent=await showDirectoryPicker({mode:'readwrite'});
+      dir=await parent.getDirectoryHandle('Edited',{create:true});
+    } else { await loadJSZip(); zip=new JSZip(); }
+    const used=new Set(); let healedTotal=0, noFace=0;
+    for(let i=0;i<bulk.length;i++){
+      const f=bulk[i];
+      info.textContent=`(${i+1}/${bulk.length}) ${f.name}`;
+      await new Promise(r=>setTimeout(r,10));            // let the UI paint
+      const bm=await createImageBitmap(f,{imageOrientation:'from-image'});
+      const o=await fitBitmap(bm,BATCH_MAX);
+      const sgm=recipe.useSeg?await segmentImage(o.c):null;
+      let fl=[];
+      if(recipe.autoHeal>0||recipe.evenLight>0||recipe.contour>0){
+        try{ fl=await detectFaces(o.c); if(!fl.length&&sgm) fl=await detectSmallFaces(o.c,sgm); }catch(err){ fl=[]; }
+        if(!fl.length) noFace++;
+      }
+      const res=process(o.g.getImageData(0,0,o.w,o.h),recipe,fl,[],sgm);
+      healedTotal+=res.info.healed;
+      o.g.putImageData(res.img,0,0);
+      const blob=await toBlob(o.c,.95);
+      let out=f.name.replace(/\.[^.]+$/,'')+'_edited.jpg', n=2;
+      while(used.has(out)) out=f.name.replace(/\.[^.]+$/,'')+`_edited_${n++}.jpg`;
+      used.add(out);
+      if(dir){ const fh=await dir.getFileHandle(out,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); }
+      else zip.file(out,blob);
+      prog.value=i+1;
+    }
+    if(zip) download(await zip.generateAsync({type:'blob'}),'Edited.zip');
+    info.textContent=`Done — ${bulk.length} photo${bulk.length>1?'s':''} written to ${dir?'“Edited” folder':'Edited.zip'}. ${healedTotal} spots healed${noFace?`; ${noFace} with no face found (auto retouch skipped)`:''}. Originals untouched.`;
+  }catch(e){
+    info.textContent=e.name==='AbortError'?'Cancelled.':'Bulk failed: '+e.message;
+  }finally{ btn.disabled=!bulk.length; }
+};
+</script>
+</body>
+</html>

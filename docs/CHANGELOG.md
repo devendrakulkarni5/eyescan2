@@ -2,6 +2,9 @@
 
 (v1 history: `CHANGELOG-v1.md`.)
 
+## 2.2.1
+- Engine version now tracks the app version (`--doctor` and report footers showed 1.0.1); the release script bumps it too.
+
 ## 2.2.0
 - Lucide icon set bundled offline (`ui/vendor/lucide.js`, 2,275 icons, ISC licence; rebuild with `tools/build_icons.py`).
   Rail, toolbar, viewer, dialogs, tiles and buttons use it; no network access anywhere in the UI.

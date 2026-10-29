@@ -1,6 +1,7 @@
 """Headless self-test for EyeScan. Run: python selftest.py"""
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 import tempfile
@@ -674,7 +675,9 @@ def main() -> int:
           core.EAR_DOWN == 0.13 and core.EAR_DOWN_PITCHED == 0.11)
 
     # --- credits / version / RAW companions
-    check("version is 1.0.1", core.__version__ == "1.0.1")
+    check("engine version matches APP_VERSION",
+          core.__version__ == re.search(r'^APP_VERSION = "([^"]+)"',
+                                        (Path(__file__).resolve().parent.parent / "bridge.py").read_text("utf-8"), re.M).group(1))
     check("credits carry author, brand, site, year, rights",
           "Devendra Kulkarni" in core.CREDIT_LINE and "DEeV.in" in core.CREDIT_LINE
           and "www.deev.in" in core.CREDIT_LINE and "2026" in core.CREDIT_LINE

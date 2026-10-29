@@ -23,9 +23,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PY = ROOT / ".venv" / "Scripts" / "python.exe"
 BRIDGE = ROOT / "bridge.py"
 ISS = ROOT / "installer.iss"
+ENGINE = ROOT / "engine" / "eyescan_core.py"
 CHANGELOG = ROOT / "docs" / "CHANGELOG.md"
 RE_BRIDGE = re.compile(r'^(APP_VERSION = ")([^"]+)(")', re.M)
 RE_ISS = re.compile(r'^(#define AppVersion ")([^"]+)(")', re.M)
+RE_ENGINE = re.compile(r'^(__version__ = ")([^"]+)(")', re.M)
 RE_REPO = re.compile(r'^GITHUB_REPO = "([^"]+)"', re.M)
 
 
@@ -169,11 +171,12 @@ def main() -> None:
         die(f"Release {tag} already exists on {releases_repo()}")
     print(f"\nReleasing {cur} -> {new}")
 
-    saved = {p: p.read_text("utf-8") for p in (BRIDGE, ISS)}
+    saved = {p: p.read_text("utf-8") for p in (BRIDGE, ISS, ENGINE)}
     try:
         step("Bumping version")
         BRIDGE.write_text(RE_BRIDGE.sub(rf"\g<1>{new}\g<3>", saved[BRIDGE], count=1), "utf-8")
         ISS.write_text(RE_ISS.sub(rf"\g<1>{new}\g<3>", saved[ISS], count=1), "utf-8")
+        ENGINE.write_text(RE_ENGINE.sub(rf"\g<1>{new}\g<3>", saved[ENGINE], count=1), "utf-8")
 
         if not args.skip_tests:
             step("Self-tests")
