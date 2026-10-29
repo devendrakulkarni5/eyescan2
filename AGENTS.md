@@ -66,7 +66,7 @@ Run-Keeper.bat                                   :: run from source
 .venv\Scripts\python.exe tests\bridge_names_test.py <folder-of-copies>   :: image server, names, db move/clear
 .venv\Scripts\python.exe tests\bridge_test.py <folder-of-copies>   :: headless scan + tools
 cd tests && npm i jsdom && node ui_smoke.js        :: UI smoke test (no browser)
-build_exe.bat  ->  dist\EyeScan2\EyeScan2.exe      :: build_installer.bat -> Inno Setup installer
+build_exe.bat  ->  dist\Keeper\Keeper.exe      :: build_installer.bat -> Inno Setup installer
 .venv\Scripts\python.exe app.py --scan "D:\Photos" --csv report.csv
 ```
 

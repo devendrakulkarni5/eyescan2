@@ -29,7 +29,7 @@ UninstallDisplayIcon={app}\Keeper.exe
 DisableProgramGroupPage=yes
 
 [Files]
-Source: "dist\EyeScan2\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "dist\Keeper\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\Keeper.exe"

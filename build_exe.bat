@@ -18,13 +18,13 @@ if errorlevel 1 ( type "%TEMP%\keeper_selftest.txt" & echo *** self-tests failed
 echo [3/4] Running PyInstaller...
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean Keeper.spec || goto :err
 echo [4/4] Verifying the built exe...
-"dist\EyeScan2\Keeper.exe" --doctor "dist\EyeScan2\doctor.txt"
+"dist\Keeper\Keeper.exe" --doctor "dist\Keeper\doctor.txt"
 timeout /t 3 /nobreak >nul
-findstr /C:"MISSING" /C:"NOT FOUND" "dist\EyeScan2\doctor.txt" >nul
-if not errorlevel 1 ( type "dist\EyeScan2\doctor.txt" & echo *** the built exe is missing a component *** & goto :err )
-del "dist\EyeScan2\doctor.txt" >nul 2>&1
+findstr /C:"MISSING" /C:"NOT FOUND" "dist\Keeper\doctor.txt" >nul
+if not errorlevel 1 ( type "dist\Keeper\doctor.txt" & echo *** the built exe is missing a component *** & goto :err )
+del "dist\Keeper\doctor.txt" >nul 2>&1
 echo.
-echo SUCCESS - your app: dist\EyeScan2\Keeper.exe  (zip the whole dist\EyeScan2 folder to share it)
+echo SUCCESS - your app: dist\Keeper\Keeper.exe  (zip the whole dist\Keeper folder to share it)
 pause
 goto :eof
 :err

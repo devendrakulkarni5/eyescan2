@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-if not exist "dist\EyeScan2\Keeper.exe" (
+if not exist "dist\Keeper\Keeper.exe" (
     echo Run build_exe.bat first.
     pause & exit /b 1
 )
@@ -10,7 +10,7 @@ if not exist "%ISCC%" set "ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 if not exist "%ISCC%" (
     echo Inno Setup 6 not found. Install it with:
     echo     winget install JRSoftware.InnoSetup
-    echo ...or zip dist\EyeScan2 instead.
+    echo ...or zip dist\Keeper instead.
     pause & exit /b 1
 )
 "%ISCC%" installer.iss || (pause & exit /b 1)

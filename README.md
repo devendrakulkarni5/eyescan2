@@ -47,7 +47,7 @@ cd tests && npm i jsdom && node ui_smoke.js         :: UI smoke test, no browser
 ## Build and release
 | Task | Command |
 |---|---|
-| Build the exe | `build_exe.bat` -> `dist\EyeScan2\EyeScan2.exe` |
+| Build the exe | `build_exe.bat` -> `dist\Keeper\Keeper.exe` |
 | Build the installer (needs Inno Setup 6) | `build_installer.bat` |
 | Publish an update (manual) | `publish_release.bat "what changed"` |
 | Whole release in one go | `release.bat patch` (or `minor`, `major`, `2.3.0`) |
