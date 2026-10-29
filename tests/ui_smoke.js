@@ -32,6 +32,7 @@ w.pywebview = { api: new Proxy({}, { get: (_, n) => async (...a) => { calls.push
 w.eval(fs.readFileSync(ui + "vendor/lucide.js", "utf8"));
 const src = fs.readFileSync(ui + "app.js", "utf8"); w.eval(src + String.fromCharCode(10) + "window.run = run; window.S = S; window.closeFolder = closeFolder; window.renderRail = renderRail; window.switchTab = switchTab; window.closeTab = closeTab; window.showLibrary = showLibrary;");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+{ const oe = w.onEvent; w.onEvent = (e) => { if (e.kind === "start" && e.folder) w.S.want = e.folder; return oe(e); }; }   // the bridge only starts folders the UI asked for
 (async () => {
   w.dispatchEvent(new w.Event("pywebviewready")); await sleep(50);
   w.onEvent({ kind: "start", total: 5, folder: "C:\p" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); w.onEvent({ kind: "final", items, stopped: false }); w.onEvent({ kind: "idle" }); await sleep(700);
@@ -141,7 +142,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chk("active tab is marked", q("#ftabs .ft")[1].classList.contains("on") && !q("#ftabs .ft")[0].classList.contains("on"));
   w.S.sort = "blink"; w.S.query = "zz"; calls.length = 0;
   await w.switchTab(0); await sleep(60);
-  chk("switching a tab unloads and re-opens through the saved results", calls.includes("close_folder") && calls.some((c) => c.startsWith("start_scan")));
+  chk("switching a tab opens the other folder and leaves the first scanning (no close, no stop)", !calls.includes("close_folder") && !calls.includes("stop_scan") && calls.some((c) => c.startsWith("start_scan")));
   w.onEvent({ kind: "start", total: 5, folder: "C:\a" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); idle(); await sleep(60);
   chk("tab A active after switch", w.S.tab === 0 && w.S.folder === "C:\a");
   await w.switchTab(1); await sleep(60);
@@ -158,5 +159,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   w.onEvent({ kind: "start", total: 5, folder: "C:\b" }); idle(); await sleep(30);
   await w.closeTab(0); await sleep(80);
   chk("closing the last tab returns to the library", w.S.tabs.length === 0 && !w.document.getElementById("start").classList.contains("hidden") && w.document.getElementById("ftabs").classList.contains("hidden") && calls.includes("save_tabs"));
+  // ---- background scans: events of a folder that is not on screen only update its tab ----
+  w.S.tabs = []; w.S.tab = -1;
+  w.onEvent({ kind: "start", total: 5, folder: "C:\\a" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); idle();
+  w.onEvent({ kind: "start", total: 5, folder: "C:\\b" }); w.onEvent({ kind: "results", items: items.slice(0, 2), done: 2, total: 5, eta: 0 }); await sleep(60);
+  const before = w.S.items.size;
+  w.onEvent({ kind: "results", folder: "C:\\a", items: [mk(99)], done: 3, total: 10, eta: 5 }); await sleep(30);
+  chk("a hidden folder's results do not touch the screen", w.S.items.size === before && w.S.folder === "C:\\b");
+  chk("its tab shows the background progress", /30%/.test(q("#ftabs .ft")[0].textContent) && q("#ftabs .ft .dot.scan").length >= 1);
+  w.onEvent({ kind: "phase", folder: "C:\\a", text: "Waiting for the other scan to finish…" });
+  w.onEvent({ kind: "final", folder: "C:\\a", stopped: false }); w.onEvent({ kind: "idle", folder: "C:\\a" }); await sleep(30);
+  chk("a finished background scan clears its progress and says so", !/%/.test(q("#ftabs .ft")[0].textContent) && /Finished scanning/.test(w.document.getElementById("toast").textContent) && w.S.scanning === true);
   console.log("errors:", errs.length ? errs : "none"); process.exit(0);
 })();

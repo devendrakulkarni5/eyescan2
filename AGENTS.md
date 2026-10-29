@@ -18,6 +18,10 @@ app.py = entry (window) · cli.py = command line (any --option routes here) · K
 - `bridge.py` — every public method is callable from JS (`pywebview.api.*`). **All state is private
   (`_name`)**: pywebview walks public attributes and recurses into `_window` otherwise (crash + error spam).
   Results travel as plain JSON via `summarize()`; progress as `_emit(kind, ...)` -> `window.onEvent`.
+- **Sessions**: `bridge._Session` = one opened folder (results, clusters, stop event, scan state). `_active` is the one on screen; `_results`,
+  `_root`, `_clusters`, `_scanning`... are properties of it, so most methods are unchanged. Scan events carry `folder`; `app.js` only lets the
+  shown folder drive the screen (others update their tab). `_scan_lock` serialises detector use; a folder with saved results is read from the
+  cache without it. Tabs/library: `keeper_library.py` (`folders` table).
 - Settings: `core.Settings` (`%LOCALAPPDATA%\EyeScan\settings.json`, shared with v1) plus
   `EXTRA_DEFAULTS` (blur_cut, misfocus_ratio, min_face, max_dim) in `%LOCALAPPDATA%\EyeScan2\extras.json`.
   `_apply_globals()` pushes blur/misfocus/EAR_DOWN into `core` and the GPU mode into `eyescan_gpu`.

@@ -202,14 +202,41 @@ class _ImageServer:
         return f"http://127.0.0.1:{self.port}/img?t={self.token}&"
 
 
+def _session_key(folder) -> str:
+    return os.path.normcase(os.path.abspath(str(folder)))
+
+
+class _Session:
+    """One opened folder: its photos, its people and its scan. The UI shows one session at a time; the others
+    keep scanning in the background (one analysis at a time, see Bridge._scan_lock)."""
+
+    def __init__(self, root) -> None:
+        self.root = Path(root) if root else None
+        self.results: dict[str, core.ImageResult] = {}
+        self.clusters: list = []
+        self.cluster_names: dict = {}
+        self.stop = threading.Event()
+        self.scanning = False        # running, or waiting for its turn
+        self.stopped = False         # the scan was cut short: opening the folder again resumes it
+        self.failed = False
+        self.done = self.total = 0
+        self.phase = ""
+
+    @property
+    def reusable(self) -> bool:
+        """A finished (or still running) session can be shown again as it is; a stopped or failed one is scanned again."""
+        return not (self.stopped or self.failed)
+
+
 class Bridge:
     def __init__(self) -> None:
         self._window = None
-        self._results: dict[str, core.ImageResult] = {}
+        self._sessions: dict[str, _Session] = {}   # every opened folder; the UI shows one (_active)
+        self._active: _Session | None = None
+        self._idle = _Session(None)                # stands in while no folder is open
+        self._scan_lock = threading.Lock()         # the detector analyses one folder at a time
         self._lib_paths: set[str] = set()      # library card thumbnails the image server may serve
         self._engine = None
-        self._stop = threading.Event()
-        self._scanning = False
         self._overrides = core.Overrides()
         self._settings = core.Settings()
         self._extras = dict(EXTRA_DEFAULTS)
@@ -225,16 +252,53 @@ class Bridge:
             self._settings.save()
             self._save_extras()
         self._apply_globals()
-        self._root: Path | None = None
         self._thumb_dir = data_dir() / "thumbs"
         self._thumb_dir.mkdir(parents=True, exist_ok=True)
         self._names = eyescan_names.Registry(db_file())
         self._tags: dict = self._names.tag_map()
-        self._clusters: list = []
-        self._cluster_names: dict = {}
         self._on_exit = None
         self._thumb_sem = threading.Semaphore(3)
         self._img = _ImageServer(self)
+
+    # ---- the folder shown in the UI: most methods work on it through these ------------------------------
+    @property
+    def _cur(self) -> _Session:
+        return self._active or self._idle
+
+    @property
+    def _results(self) -> dict:
+        return self._cur.results
+
+    @property
+    def _root(self):
+        return self._cur.root
+
+    @property
+    def _scanning(self) -> bool:
+        return self._cur.scanning
+
+    @property
+    def _stop(self):
+        return self._cur.stop
+
+    @property
+    def _clusters(self) -> list:
+        return self._cur.clusters
+
+    @_clusters.setter
+    def _clusters(self, v: list) -> None:
+        self._cur.clusters = v
+
+    @property
+    def _cluster_names(self) -> dict:
+        return self._cur.cluster_names
+
+    @_cluster_names.setter
+    def _cluster_names(self, v: dict) -> None:
+        self._cur.cluster_names = v
+
+    def _any_scanning(self) -> bool:
+        return any(s.scanning for s in self._sessions.values())
 
     # ---- plumbing ---------------------------------------------------------
     def _emit(self, kind: str, **payload) -> None:
@@ -267,6 +331,8 @@ class Bridge:
                 "people_ok": core._embed_available()}
 
     def exit(self) -> None:
+        for sess in self._sessions.values():
+            sess.stop.set()
         if getattr(self, "_on_exit", None):
             self._on_exit()                 # remember the window before it goes
         if self._window is not None:
@@ -339,7 +405,7 @@ class Bridge:
         self._apply_globals()
         if "main_only" in changed and self._results and not self._scanning:
             self._finish_analysis()      # cached measurements, no re-detection
-        if changed & ENGINE_KEYS and self._engine is not None and not self._scanning:
+        if changed & ENGINE_KEYS and self._engine is not None and not self._any_scanning():
             try:
                 self._engine.close()
             except Exception:  # noqa: BLE001
@@ -383,57 +449,102 @@ class Bridge:
 
     # ---- scanning ----------------------------------------------------------
     def start_scan(self, folder: str, opts: dict | None = None) -> dict:
+        """Open a folder. A folder that is already open (scanning or finished) is simply shown again; a new,
+        stopped or ``refresh``/``force`` one is scanned (photos already in the saved results are quick)."""
         opts = opts or {}
-        if self._scanning:
-            return {"ok": False, "error": "A scan is already running."}
         root = Path(folder)
         if not root.is_dir():
             return {"ok": False, "error": "That folder doesn't exist."}
+        force, key = bool(opts.get("force")), _session_key(root)
+        old = self._sessions.get(key)
+        self._settings["folder"] = str(root)
+        self._settings.add_recent(str(root))
+        if old is not None and old.reusable and not force and not opts.get("refresh"):
+            self._settings.save()
+            self._active = old
+            threading.Thread(target=self._replay, args=(old,), daemon=True).start()
+            return {"ok": True}
+        if old is not None and old.scanning:
+            return {"ok": False, "error": "This folder is still being scanned. Stop it first."}
         for k in ("threshold", "recursive", "robust", "deep", "keep_down", "dup_level",
                   "dup_enabled", "use_cache", "people", "animals", "workers"):
             if k in opts:
                 self._settings[k] = opts[k]
-        self._settings["folder"] = str(root)
-        self._settings.add_recent(str(root))
         self._settings.save()
-        self._stop.clear()
-        self._scanning = True
-        self._root = root
-        threading.Thread(target=self._scan, args=(root, bool(opts.get("force")), None),
-                         daemon=True).start()
+        sess = _Session(root)
+        sess.scanning = True
+        self._sessions[key] = sess
+        self._active = sess
+        threading.Thread(target=self._scan, args=(sess, force, None), daemon=True).start()
         return {"ok": True}
 
     def rescan(self, paths: list) -> dict:
         """Re-analyse chosen photos, ignoring their saved results."""
-        if self._scanning or not self._root:
+        sess = self._active
+        if sess is None or sess.scanning:
             return {"ok": False, "error": "Wait for the current scan to finish."}
-        self._stop.clear()
-        self._scanning = True
-        threading.Thread(target=self._scan, args=(self._root, True, [Path(p) for p in paths]),
+        sess.stop.clear()
+        sess.scanning = True
+        threading.Thread(target=self._scan, args=(sess, True, [Path(p) for p in paths]),
                          daemon=True).start()
         return {"ok": True}
 
     def stop_scan(self) -> None:
-        self._stop.set()
+        self._cur.stop.set()
+
+    def _drop(self, sess: "_Session") -> bool:
+        """Stop a session's scan and forget its results (photos and saved data are untouched)."""
+        sess.stop.set()
+        t0 = time.time()
+        while sess.scanning and time.time() - t0 < 10:
+            time.sleep(0.1)
+        if sess.scanning:
+            return False
+        self._sessions.pop(_session_key(sess.root), None)
+        if self._active is sess:
+            self._active = None
+        return True
 
     def close_folder(self) -> dict:
-        """Stop any scan, forget the open folder and its results (photos and saved data are untouched)."""
-        self._stop.set()
-        t0 = time.time()
-        while self._scanning and time.time() - t0 < 10:
-            time.sleep(0.1)
-        if self._scanning:
+        """Close the open folder: stop its scan and forget it."""
+        if self._active is not None and not self._drop(self._active):
             return {"ok": False, "error": "The scan is still stopping. Try again in a moment."}
-        self._results, self._root = {}, None
-        self._clusters, self._cluster_names = [], {}
         return {"ok": True}
 
-    def _make_engine(self):
+    def drop_session(self, folder: str) -> dict:
+        """Close a folder that is not on screen (a background tab)."""
+        sess = self._sessions.get(_session_key(folder))
+        if sess is not None and not self._drop(sess):
+            return {"ok": False, "error": "The scan is still stopping. Try again in a moment."}
+        return {"ok": True}
+
+    def leave_folder(self) -> None:
+        """Show no folder (library screen). Scans keep running in the background."""
+        self._active = None
+
+    def _replay(self, sess: "_Session") -> None:
+        """Put an open folder back on screen: what it has so far, then (still scanning) it carries on live."""
+        fold = str(sess.root)
+        if not sess.scanning:
+            self._finish_analysis(sess)       # sensitivity or duplicate settings may have changed meanwhile
+        self._emit("start", folder=fold, total=sess.total if sess.scanning else len(sess.results), partial=False)
+        allr = list(sess.results.values())
+        for k in range(0, len(allr), FINAL_CHUNK):
+            self._emit("results", folder=fold, items=[self._sum(r) for r in allr[k:k + FINAL_CHUNK]],
+                       done=sess.done, total=sess.total, eta=None)
+        if sess.scanning:
+            if sess.phase:
+                self._emit("phase", folder=fold, text=sess.phase)
+        else:
+            self._emit("final", folder=fold, stopped=False, done=len(allr), total=len(allr))
+            self._emit("idle", folder=fold)
+
+    def _make_engine(self, folder: str | None = None):
         s = self._settings
         if self._engine is None:
-            self._emit("phase", text="Loading face models…")
+            self._emit("phase", folder=folder, text="Loading face models…")
             self._engine = core.EyeEngine(
-                core.ensure_model(lambda m: self._emit("phase", text=str(m))),
+                core.ensure_model(lambda m: self._emit("phase", folder=folder, text=str(m))),
                 threshold=s["threshold"], require_both=True,
                 robust=bool(s["robust"]), deep=bool(s["deep"]),
                 keep_down=bool(s["keep_down"]), detect_animals=bool(s["animals"]),
@@ -445,69 +556,108 @@ class Bridge:
         e.embed_faces = bool(s["people"]) and core._embed_available()
         return e
 
-    def _scan(self, root: Path, force: bool, only: list | None) -> None:
-        cache = None
-        s = self._settings
+    def _scan(self, sess: "_Session", force: bool, only: list | None) -> None:
+        root, fold = sess.root, str(sess.root)
+        s, cache, gate = self._settings, None, False
         thr = float(s["threshold"])
-        self._clusters = []                  # people are regrouped after every scan
+        sess.clusters = []                   # people are regrouped after every scan
+        sess.stopped = sess.failed = False
+        batch: list[dict] = []
+        started = last = time.monotonic()
+
+        def take(p, res) -> None:
+            self._overrides.apply(res)
+            res.reclassify(thr, True, bool(s["keep_down"]))
+            sess.results[str(p)] = res
+            sess.done += 1
+            batch.append(self._sum(res))
+
+        def flush(always: bool = False) -> None:
+            nonlocal batch, last
+            now = time.monotonic()
+            if batch and (always or now - last >= BATCH_SECONDS):
+                rate = sess.done / max(now - started, 1e-3)
+                self._emit("results", folder=fold, items=batch, done=sess.done, total=sess.total,
+                           eta=int((sess.total - sess.done) / rate) if rate else None)
+                batch, last = [], now
+
         try:
-            eng = self._make_engine()
             if only is None:
                 files = list(core.iter_images(
                     root, bool(s["recursive"]),
                     skip_dirs=("Closed Eyes", "Blurry", "Duplicates", "Contact Sheets")))
-                self._results = {}
+                sess.results = {}
             else:
                 files = only
-            total = len(files)
-            self._emit("start", total=total, folder=str(root), partial=only is not None)
+            sess.total, sess.done = len(files), 0
+            self._emit("start", folder=fold, total=sess.total, partial=only is not None)
             if s["use_cache"]:
                 cache = self._open_cache()
-            batch: list[dict] = []
-            i_done = 0
-            last = started = time.monotonic()
-            workers = int(s["workers"]) or None
-            for i, (p, res, _cached) in enumerate(
-                    core.scan_files(eng, files, cache, force=force, stop=self._stop,
-                                    workers=workers), 1):
-                self._overrides.apply(res)
-                res.reclassify(thr, True, bool(s["keep_down"]))
-                self._results[str(p)] = res
-                i_done = i
-                batch.append(self._sum(res))
-                now = time.monotonic()
-                if now - last >= BATCH_SECONDS or i == total:
-                    rate = i / max(now - started, 1e-3)
-                    self._emit("results", items=batch, done=i, total=total,
-                               eta=int((total - i) / rate) if rate else None)
-                    batch, last = [], now
-            if batch:
-                self._emit("results", items=batch, done=total, total=total, eta=0)
-            self._emit("phase", text="Finding similar shots…")
-            self._finish_analysis()
-            allr = list(self._results.values())
+            todo = files
+            gate = self._scan_lock.acquire(blocking=False)
+            if not gate:
+                # another folder holds the detector: show what is already saved right away, then wait for a turn
+                if cache is not None and not force and only is None and self._engine is not None:
+                    key, todo = self._engine.cache_key(), []
+                    for p in files:
+                        if sess.stop.is_set():
+                            break
+                        try:
+                            st = p.stat()
+                        except OSError:
+                            todo.append(p)
+                            continue
+                        hit = cache.get(p, st.st_size, st.st_mtime, key)
+                        if hit is None:
+                            todo.append(p)
+                        else:
+                            take(p, hit)
+                            flush()
+                    flush(True)
+                if todo and not sess.stop.is_set():
+                    sess.phase = "Waiting for the other scan to finish…"
+                    self._emit("phase", folder=fold, text=sess.phase)
+                    while not sess.stop.is_set() and not gate:
+                        gate = self._scan_lock.acquire(timeout=0.25)
+                    sess.phase = ""
+            if todo and gate and not sess.stop.is_set():
+                eng = self._make_engine(fold)
+                workers = int(s["workers"]) or None
+                for p, res, _cached in core.scan_files(eng, todo, cache, force=force, stop=sess.stop,
+                                                       workers=workers):
+                    take(p, res)
+                    flush()
+            flush(True)
+            sess.phase = "Finding similar shots…"
+            self._emit("phase", folder=fold, text=sess.phase)
+            self._finish_analysis(sess)
+            allr = list(sess.results.values())
             for k in range(0, len(allr), FINAL_CHUNK):          # duplicate info changed: refresh in chunks
-                self._emit("results", items=[self._sum(r) for r in allr[k:k + FINAL_CHUNK]],
-                           done=total, total=total, eta=0)
-            if not self._stop.is_set():
-                self._note_library(root)
-            self._emit("final", stopped=self._stop.is_set(), done=min(i_done, total), total=total)
+                self._emit("results", folder=fold, items=[self._sum(r) for r in allr[k:k + FINAL_CHUNK]],
+                           done=sess.total, total=sess.total, eta=0)
+            sess.stopped = sess.stop.is_set()
+            if not sess.stopped:
+                self._note_library(sess)
+            self._emit("final", folder=fold, stopped=sess.stopped, done=min(sess.done, sess.total), total=sess.total)
         except Exception as exc:  # noqa: BLE001
-            self._emit("error", message=f"Scan failed: {exc}")
+            sess.failed = True
+            self._emit("error", folder=fold, message=f"Scan failed: {exc}")
         finally:
+            if gate:
+                self._scan_lock.release()
             if cache is not None:
                 cache.close()
-            self._scanning = False
-            self._emit("idle")
+            sess.scanning, sess.phase = False, ""
+            self._emit("idle", folder=fold)
 
     # ---- library of scanned folders ----------------------------------------
-    def _note_library(self, root: Path) -> None:
-        rs = sorted(self._results)
+    def _note_library(self, sess: "_Session") -> None:
+        rs = sorted(sess.results)
         if not rs:
             return
         step = max(1, len(rs) // 4)
         lib = keeper_library.Library(db_file())
-        lib.note(root, len(rs), sum(1 for r in self._results.values() if r.is_flagged), rs[::step][:4])
+        lib.note(sess.root, len(rs), sum(1 for r in sess.results.values() if r.is_flagged), rs[::step][:4])
         lib.close()
 
     def library(self) -> list:
@@ -529,8 +679,9 @@ class Bridge:
 
     def library_remove(self, folder: str) -> dict:
         """Forget a folder: its saved scan results, its library card and its recent entry. Photos are untouched."""
-        if self._scanning and self._root and os.path.normcase(str(self._root)) == os.path.normcase(os.path.abspath(folder)):
-            return {"ok": False, "error": "Close this folder before removing it."}
+        sess = self._sessions.get(_session_key(folder))
+        if sess is not None and not self._drop(sess):
+            return {"ok": False, "error": "This folder is still scanning. Stop it first."}
         lib = keeper_library.Library(db_file())
         lib.remove(folder)
         lib.close()
@@ -551,8 +702,8 @@ class Bridge:
         self._extras["tabs"] = [str(f) for f in (folders or [])][:20]
         self._save_extras()
 
-    def _finish_analysis(self) -> None:
-        s, rs = self._settings, list(self._results.values())
+    def _finish_analysis(self, sess: "_Session | None" = None) -> None:
+        s, rs = self._settings, list((sess or self._cur).results.values())
         core.apply_threshold(rs, float(s["threshold"]), True, bool(s["keep_down"]))
         if s["dup_enabled"]:
             core.find_duplicates(rs, core.DUP_LEVELS.get(s["dup_level"], 30))
@@ -950,7 +1101,7 @@ class Bridge:
 
     def db_move(self, new_dir: str, use_existing: bool = False) -> dict:
         """Copy the database to ``new_dir`` (SQLite backup API), switch to it, remove the old file."""
-        if self._scanning:
+        if self._any_scanning():
             return {"ok": False, "error": "Wait for the scan to finish."}
         dest_dir = Path(new_dir)
         if not dest_dir.is_dir():
@@ -987,7 +1138,7 @@ class Bridge:
 
     def db_clear(self, what: str) -> dict:
         """what: results | folder | missing | people | tags | names | thumbs | compact | all"""
-        if self._scanning:
+        if self._any_scanning():
             return {"ok": False, "error": "Wait for the scan to finish."}
         n = 0
         c = self._open_cache() if what in ("results", "folder", "missing", "compact", "all") else None

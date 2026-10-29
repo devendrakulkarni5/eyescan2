@@ -5,7 +5,7 @@ const S = {
   items: new Map(), tiles: new Map(), sel: new Set(), focus: null, anchor: null, rejected: new Set(),
   filter: "closed", sub: "all", query: "", sort: "name", view: "grid", overlay: "box", only: null,
   scanning: false, visible: [], cfg: {}, info: {}, about: {}, folder: "", review: null, zoomFace: 0,
-  tabs: [], tab: -1, pendingView: null, restoreView: null, lib: [],
+  tabs: [], tab: -1, want: null, pendingView: null, restoreView: null, lib: [],
 };
 let api = null, renderTimer = null, sensTimer = null;
 
@@ -411,7 +411,22 @@ function buildMenus() {
 }
 
 /* ---------- events from Python ---------- */
+function backgroundEvent(e) {
+  const t = S.tabs[tabOf(e.folder)]; if (!t) return;
+  if (e.kind === "start") t.prog = { done: 0, total: e.total };
+  else if (e.kind === "results") t.prog = { done: e.done, total: e.total };
+  else if (e.kind === "phase") t.phase = e.text;
+  else if (e.kind === "error") toast(`${baseName(e.folder)}: ${e.message}`);
+  else if (e.kind === "final") { t.prog = null; t.phase = ""; if (!e.stopped) toast(`Finished scanning ${baseName(e.folder)}`); }
+  else if (e.kind === "idle") { t.prog = null; t.phase = ""; }
+  const now = Date.now();
+  if (e.kind !== "results" || now - (backgroundEvent.t || 0) > 500) { backgroundEvent.t = now; renderTabs(); }
+}
 window.onEvent = (e) => {
+  if (e.folder) {   // a scan event: it drives the screen only when it is for the folder shown (or being opened)
+    const here = (e.kind === "start" && S.want && sameF(e.folder, S.want)) || (S.folder && sameF(e.folder, S.folder));
+    if (!here) return backgroundEvent(e);
+  }
   if (e.kind === "start") {
     if (!e.partial && S.folder) saveView();
     const view = e.partial ? null : takeView(e.folder);
@@ -874,12 +889,15 @@ async function unloadFolder() {
   if (!S.folder) return true;
   $("stop-label").textContent = "Stopping…";
   const r = await api.close_folder(); if (!r.ok) { resetStop(); toast(r.error); return false; }
+  clearFolderUI();
+  return true;
+}
+function clearFolderUI() {
   S.items.clear(); S.tiles.clear(); S.sel.clear(); S.rejected.clear(); S.focus = null; S.only = null; S.people = []; S.geo = {}; S.gridPaths = null; S.hiddenPeople = new Set();
   S.folder = ""; S.stopped = null; S.scanning = false; showNotice(); resetStop(); $("progress").classList.add("hidden");
   if (closeModal) closeModal();
   $("folder-name").textContent = ""; $("grid").replaceChildren();
   renderInspector(); status("Ready"); $("status-counts").textContent = "";
-  return true;
 }
 function goStart() {
   S.tab = -1; $("review").classList.add("hidden"); $("start").classList.remove("hidden"); renderTabs(); renderLibrary();
@@ -908,28 +926,25 @@ function restoreTail(v) {      // selection and scroll can only be restored once
 function tabEnter(folder) {
   let i = tabOf(folder);
   if (i < 0) { S.tabs.push({ folder, view: null }); i = S.tabs.length - 1; persistTabs(); }
-  S.tab = i;
+  S.tab = i; S.tabs[i].prog = null; S.tabs[i].phase = "";
 }
 function renderTabs() {
   const el = $("ftabs"); el.classList.toggle("hidden", !S.tabs.length);
-  el.innerHTML = S.tabs.map((t, i) => `<div class="ft${i === S.tab ? " on" : ""}" role="tab" aria-selected="${i === S.tab}" tabindex="0" data-i="${i}" title="${esc(t.folder)}"><span class="dot${i === S.tab && S.scanning ? " scan" : ""}"></span><span class="fn">${esc(baseName(t.folder))}</span><button class="ghost x" data-x="${i}" title="Close tab (Ctrl+W)" aria-label="Close tab">${ico("x")}</button></div>`).join("") +
+  el.innerHTML = S.tabs.map((t, i) => `<div class="ft${i === S.tab ? " on" : ""}" role="tab" aria-selected="${i === S.tab}" tabindex="0" data-i="${i}" title="${esc(t.folder)}"><span class="dot${(i === S.tab && S.scanning) || t.prog || t.phase ? " scan" : ""}"></span><span class="fn">${esc(baseName(t.folder))}</span>${t.prog && t.prog.total ? `<span class="pct" title="${esc(t.phase || "Scanning in the background")}">${Math.round(100 * t.prog.done / t.prog.total)}%</span>` : ""}<button class="ghost x" data-x="${i}" title="Close tab (Ctrl+W)" aria-label="Close tab">${ico("x")}</button></div>`).join("") +
     `<button class="ghost ftnew" data-lib title="Library: all scanned folders" aria-label="Library">${ico("plus")}</button>`;
 }
 async function openTab(t) {
   S.pendingView = { folder: t.folder, view: t.view }; S.tab = S.tabs.indexOf(t); renderTabs();
   if (!(await startScan(t.folder, false))) { S.pendingView = null; if (!S.folder) goStart(); }
 }
-async function switchTab(i) {
+async function switchTab(i) {      // the folder you leave keeps scanning in the background
   const t = S.tabs[i]; if (!t || (i === S.tab && S.folder)) return;
   if (!(await api.folder_ok(t.folder))) return toast("That folder isn't available (is the drive connected?).");
-  const go = async () => { saveView(); if (S.folder && !(await unloadFolder())) return; openTab(t); };
-  if (S.scanning) return confirmBox({ title: "Stop scanning?", sub: baseName(S.folder), icon: "square", okLabel: "Stop and switch",
-    text: "Photos scanned so far are saved. Open this folder's tab again to resume.", onOk: go });
-  go();
+  saveView(); openTab(t);
 }
 async function closeTab(i) {
   const t = S.tabs[i]; if (!t) return;
-  if (i !== S.tab) { S.tabs.splice(i, 1); if (i < S.tab) S.tab--; persistTabs(); return renderTabs(); }
+  if (i !== S.tab) { await api.drop_session(t.folder); S.tabs.splice(i, 1); if (i < S.tab) S.tab--; persistTabs(); return renderTabs(); }
   if (!(await unloadFolder())) return;
   S.tabs.splice(i, 1); persistTabs();
   const next = S.tabs[Math.min(i, S.tabs.length - 1)];
@@ -939,17 +954,14 @@ async function closeTab(i) {
 function cycleTab(d) { const n = S.tabs.length; if (n > 1) switchTab(((S.tab < 0 ? (d > 0 ? -1 : 0) : S.tab) + d + n) % n); }
 async function showLibrary() {
   if (isStart()) return;
-  const go = async () => { saveView(); if (await unloadFolder()) goStart(); };
-  if (S.scanning) return confirmBox({ title: "Stop scanning?", sub: baseName(S.folder), icon: "square", okLabel: "Stop and open library",
-    text: "Photos scanned so far are saved. Open this folder's tab again to resume.", onOk: go });
-  go();
+  saveView(); await api.leave_folder(); clearFolderUI(); goStart();
 }
 /* open a folder: reuse its tab (and view) when it has one */
 function openFolderTab(folder) { const i = tabOf(folder); if (i >= 0) { const t = S.tabs[i]; return isStart() ? openTab(t) : switchTab(i); } return startScan(folder, false); }
 function tabMenu(i) {
   const t = S.tabs[i];
   return [{ l: "Close tab", k: "Ctrl+W", a: () => closeTab(i) },
-    { l: "Close other tabs", dis: S.tabs.length < 2, a: () => { for (let j = S.tabs.length - 1; j >= 0; j--) if (S.tabs[j] !== t && j !== S.tab) S.tabs.splice(j, 1); S.tab = S.tabs.findIndex((x) => x === t); persistTabs(); renderTabs(); } },
+    { l: "Close other tabs", dis: S.tabs.length < 2, a: () => { for (let j = S.tabs.length - 1; j >= 0; j--) if (S.tabs[j] !== t && j !== S.tab) { api.drop_session(S.tabs[j].folder); S.tabs.splice(j, 1); } S.tab = S.tabs.findIndex((x) => x === t); persistTabs(); renderTabs(); } },
     "-", { l: "Show in Explorer", a: () => api.reveal(t.folder) }];
 }
 
@@ -1021,11 +1033,12 @@ async function openFolder(folder) {
     buttons: [{ label: "Choose another folder…", left: true, onClick: async (x) => { const n = await api.pick_folder(); if (n) { x(); openFolder(n); } } },
       { label: "Cancel", onClick: (x) => x() },
       { label: "Start scan", cls: "primary", onClick: (x) => { const v = (id) => document.querySelector(`[data-k=${id}]`).checked;
-        const o = { recursive: v("so-recursive"), robust: !v("so-fast"), force: v("so-force") }; x(); startScan(f, o.force, o); } }] });
+        const o = { recursive: v("so-recursive"), robust: !v("so-fast"), force: v("so-force"), refresh: true }; x(); startScan(f, o.force, o); } }] });
 }
 async function startScan(folder, force, given) {
   if (!folder) return;
   const opts = { force: !!force };
+  S.want = folder;
   if (given) Object.assign(opts, given);
   else if (isStart()) { opts.recursive = $("o-recursive").checked; opts.robust = !$("o-fast").checked; opts.force = opts.force || $("o-force").checked; }
   const res = await api.start_scan(folder, opts); if (!res.ok) toast(res.error); else S.cfg = await api.get_settings();
@@ -1039,7 +1052,7 @@ async function applyOverride(value) {
 }
 const ACT = {
   open_folder: () => openFolder(),
-  scan: () => S.folder ? startScan(S.folder, false) : ACT.open_folder(),
+  scan: () => S.folder ? startScan(S.folder, false, { refresh: true }) : ACT.open_folder(),
   rescan_all: () => S.folder ? startScan(S.folder, true) : ACT.open_folder(),
   "rescan-sel": async () => { const r = await api.rescan(selPaths()); if (!r.ok) toast(r.error); },
   stop: () => { $("stop").disabled = true; $("stop-label").textContent = "Stopping…"; api.stop_scan(); },

@@ -62,6 +62,7 @@ input[type=range]{accent-color:var(--accent-d)}input[type=checkbox],input[type=r
 .ft .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .ft .x{padding:2px 4px;border-radius:5px;color:var(--muted);line-height:1}.ft .x:hover{background:var(--line);color:var(--text)}.ft .x svg,.ftnew svg{width:14px;height:14px;display:block}
 .ft .dot{width:8px;height:8px;border-radius:50%;background:var(--sage);flex:none}.ft .dot.scan{background:var(--sun-d);animation:ftpulse 1s infinite alternate}
+.ft .pct{font-size:11px;color:var(--muted);flex:none}
 .ftnew{margin-bottom:3px;padding:4px 7px;color:var(--muted);flex:none}
 @keyframes ftpulse{to{opacity:.3}}
 .ft:focus-visible{outline:2px solid var(--accent-d);outline-offset:-2px}

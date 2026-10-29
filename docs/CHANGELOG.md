@@ -3,6 +3,12 @@
 (v1 history: `CHANGELOG-v1.md`.)
 
 ## Unreleased
+- **Switch folders while one is scanning**: leaving a folder (another tab, the library, "+") no longer stops its scan. Every open folder is a
+  session in the bridge (`_Session`); the UI shows one, the rest keep going and report progress on their tab (percentage, pulsing dot, a toast
+  when done). Switching back replays what it has so far and continues live. The detector analyses one folder at a time: a folder whose
+  photos are already saved opens immediately even while another scan runs, and new photos wait their turn ("Waiting for the other scan...").
+  Closing a tab stops and forgets that folder's scan. Scan > Scan on an open folder re-checks the disk; reopening a stopped scan resumes it.
+- Fixed the preview toolbar icons (rotate, zoom, fit) being stacked on top of each other by the face-overlay `.pv svg` rule.
 - **Folder tabs**: every folder you open becomes a tab under the menu bar. Switching reloads the folder from its saved scan results and
   restores that tab's filter, sort, search, selection, marked-for-recycle photos and scroll position. Ctrl+Tab / Ctrl+Shift+Tab / Ctrl+1..9
   switch, Ctrl+W (or middle-click) closes, the "+" button opens the library. Tabs are remembered across restarts (not re-scanned).
