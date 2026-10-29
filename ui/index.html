@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EyeScan 2</title>
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <div class="menubar" id="menubar">
+    <img class="brand-mini" data-logo src="assets/icon-dark.png" alt="EyeScan">
+    <div id="menus"></div>
+    <button class="ghost sm" id="theme-btn" title="Toggle dark / light (Ctrl+T)" aria-label="Toggle theme"></button>
+  </div>
+
+  <section id="start" class="screen">
+    <div class="hero">
+      <img data-logo src="assets/icon-dark.png" class="hero-logo" alt="">
+      <h1>EyeScan</h1>
+      <p class="tag">Find, sort and review photos fast.<br>Everything runs offline on this PC.</p>
+      <div class="drop" id="drop">
+        <p class="big">Choose a folder of photos</p>
+        <button class="primary" id="pick">Choose folder&hellip;</button>
+        <div class="opts">
+          <label class="chip-opt"><input type="checkbox" id="o-recursive"> Include subfolders</label>
+          <label class="chip-opt"><input type="checkbox" id="o-fast"> Faster, less thorough</label>
+          <label class="chip-opt"><input type="checkbox" id="o-force"> Ignore saved results</label>
+        </div>
+      </div>
+      <div class="recent" id="recent"></div>
+    </div>
+  </section>
+
+  <section id="review" class="screen hidden">
+    <header class="top">
+      <button class="ghost sm closebtn" id="close-folder" title="Close folder and go back (Ctrl+W)" aria-label="Close folder"><span data-i="x"></span></button>
+      <div class="title"><b id="folder-name"></b><span id="phase" class="muted"></span></div>
+      <div class="view-tools">
+        <input type="search" id="search" placeholder="Search name or tag">
+        <select id="sort" title="Sort">
+          <option value="name">Name</option><option value="blink">Most closed</option>
+          <option value="size">Largest</option><option value="faces">Most people</option>
+        </select>
+        <select id="ratio" title="Grid shape"><option value="original">Original</option><option value="3:2">3:2</option><option value="2:3">2:3</option><option value="square">Square</option></select>
+        <div class="seg" id="viewseg"><button data-v="grid"><span data-i="layout-grid"></span>Grid</button><button data-v="list"><span data-i="list"></span>List</button></div>
+        <input type="range" id="thumbsize" min="110" max="280" step="10" title="Thumbnail size">
+        <div class="seg" id="ovseg" title="Face overlay"><button data-o="box">Box</button><button data-o="mesh">Mesh</button><button data-o="detail">Detail</button><button data-o="off">Off</button></div>
+      </div>
+      <div class="progress hidden" id="progress"><div class="bar"><div id="bar-fill"></div></div><span id="prog-text"></span>
+        <button class="stopbtn" id="stop" title="Stop scanning (Esc). You can resume later."><span data-i="square"></span><span id="stop-label">Stop</span></button></div>
+    </header>
+    <div class="body" id="body">
+      <nav class="rail" id="rail"></nav>
+      <main class="center">
+        <div class="subbar" id="subbar"></div>
+        <div class="notice hidden" id="notice"></div>
+        <div class="grid" id="grid"></div>
+        <div class="list hidden" id="list"></div>
+        <div class="empty hidden" id="empty">Nothing in this view.</div>
+      </main>
+      <aside class="inspector" id="inspector"></aside>
+    </div>
+    <footer class="actionbar hidden" id="actionbar">
+      <span id="rej-text"></span>
+      <button class="ghost" id="rej-clear">Clear</button>
+      <button class="danger" id="rej-go">Move to Recycle Bin</button>
+    </footer>
+  </section>
+
+  <footer class="status">
+    <span id="status-msg">Ready</span>
+    <span id="status-counts" class="muted"></span>
+    <span class="credit" id="credit"></span>
+  </footer>
+</div>
+
+<div class="ctx hidden" id="ctx"></div>
+<div class="overlay hidden" id="modal"></div>
+<div class="toast hidden" id="toast"></div>
+<script src="vendor/lucide.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

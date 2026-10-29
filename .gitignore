@@ -1,0 +1,20 @@
+# environments & caches
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+
+# build output
+build/
+dist/
+installer/
+build.log
+deploy.log
+
+# local backups
+backups/
+
+# user data / scratch
+*.db
+*.csv
+doctor.txt
