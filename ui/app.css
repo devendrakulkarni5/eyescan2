@@ -267,7 +267,7 @@ input[type=range]{accent-color:var(--accent-d)}input[type=checkbox],input[type=r
 svg{flex:none}.ri{display:inline-flex;width:18px;height:18px}.ri svg,.rail .item svg{width:18px;height:18px}
 .menubar #theme-btn svg,.closebtn svg{width:18px;height:18px;display:block}.dhead .x svg{width:18px;height:18px}
 .tile .icons{display:flex;gap:4px}.tile .icons svg{width:15px;height:15px;background:rgba(15,23,42,.65);color:#fff;border-radius:5px;padding:2px;box-sizing:content-box}
-.vtools button svg{width:16px;height:16px;display:block;margin:auto}.nav-arrow svg{width:24px;height:24px;display:block}
+.vtools button svg{position:static;inset:auto;width:16px;height:16px;display:block;margin:auto}  /* .pv svg (the face overlay) must not catch these icons */.nav-arrow svg{width:24px;height:24px;display:block}
 .seg button{display:inline-flex;align-items:center;gap:5px}.seg button svg{width:14px;height:14px}
 .stopbtn span[data-i]{display:inline-flex}.stopbtn svg{width:13px;height:13px;fill:currentColor}.notice .nico svg{width:18px;height:18px;color:var(--sun-d);display:block}.notice .nico{margin-right:0}
 .rail .item .ri{flex:none}.rail h4{margin-top:12px}.dhead .ico svg{width:22px;height:22px}.snav button svg{width:17px;height:17px}
