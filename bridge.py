@@ -514,14 +514,17 @@ class Bridge:
         """Every scanned folder (newest first), plus recent folders scanned before the library existed."""
         lib = keeper_library.Library(db_file())
         rows = lib.all()
-        lib.close()
         seen = {os.path.normcase(os.path.abspath(r["folder"])) for r in rows}
         for f in self._settings.get("recent", []) or []:
             if os.path.normcase(os.path.abspath(f)) not in seen:
                 rows.append({"folder": f, "total": None, "flagged": None, "scanned": None, "thumbs": []})
         for r in rows:
             r["exists"] = Path(r["folder"]).is_dir()
+            if r["total"] is None:                       # scanned before the library existed: read what the cache knows
+                n, r["thumbs"] = lib.from_cache(r["folder"])
+                r["total"] = n or None
             self._lib_paths.update(r["thumbs"])
+        lib.close()
         return rows
 
     def library_remove(self, folder: str) -> dict:

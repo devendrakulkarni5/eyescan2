@@ -73,6 +73,20 @@ class Library:
             out.append({"folder": name, "total": total, "flagged": flagged, "scanned": scanned, "thumbs": th})
         return out
 
+    def from_cache(self, folder) -> tuple[int, list]:
+        """(photo count, 4 sample paths) for a folder scanned before the library existed, read from the scan cache."""
+        if not self._db:
+            return 0, []
+        prefix = _key(folder).rstrip("\/") + os.sep
+        with self._lock:
+            try:
+                rows = [r[0] for r in self._db.execute(
+                    "SELECT path FROM results WHERE substr(path, 1, ?) = ? ORDER BY path", (len(prefix), prefix))]
+            except sqlite3.Error:
+                return 0, []
+        step = max(1, len(rows) // 4)
+        return len(rows), rows[::step][:4]
+
     def remove(self, folder) -> None:
         if not self._db:
             return

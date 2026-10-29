@@ -51,6 +51,7 @@ input[type=range]{accent-color:var(--accent-d)}input[type=checkbox],input[type=r
 .hero{text-align:center;width:min(560px,92%);padding:20px 0}
 .hero-logo{width:84px;height:84px}.hero h1{font-size:30px;font-weight:600;margin:6px 0 2px;letter-spacing:.3px}
 .tag{color:var(--muted);margin:0 0 22px;line-height:1.5}
+.hero p.tag{font-size:inherit;padding:0;border:0;border-radius:0;background:none}
 .drop{border:2px dashed var(--line);border-radius:20px;padding:26px 20px;transition:.15s;background:var(--card)}
 .drop .big{font-size:16px;font-weight:600;margin:0 0 14px}
 .opts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
