@@ -77,7 +77,7 @@ class Library:
         """(photo count, 4 sample paths) for a folder scanned before the library existed, read from the scan cache."""
         if not self._db:
             return 0, []
-        prefix = _key(folder).rstrip("\/") + os.sep
+        prefix = _key(folder).rstrip("\\/") + os.sep
         with self._lock:
             try:
                 rows = [r[0] for r in self._db.execute(
