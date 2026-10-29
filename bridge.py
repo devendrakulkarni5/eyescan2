@@ -35,6 +35,7 @@ if ENGINE_DIR.is_dir():
 
 import eyescan_core as core  # noqa: E402
 import eyescan_names  # noqa: E402
+import keeper_library  # noqa: E402
 
 APP_NAME = "Keeper"
 APP_VERSION = "2.3.0"
@@ -63,6 +64,7 @@ EXTRA_DEFAULTS = {
     "grid_ratio": "original",       # square | 3:2 | 2:3 | original
     "v2_defaults": 0,               # one-time migration marker
     "after_scan_tab": "closed",     # tab to open when a scan completes (scan itself starts on All); "off" = never switch
+    "tabs": [],                    # folders that were open as tabs (restored, not rescanned, on start)
     "check_updates": True,         # look for a newer version on start (the only online call)
     "overlay_parts": ["outline", "forehead", "jaw", "chin", "cheeks", "brows", "nose", "lips", "eyes"],
 }
@@ -173,7 +175,7 @@ class _ImageServer:
                     size = int((q.get("s") or ["360"])[0])
                 except ValueError:
                     size = 360
-                if (q.get("t") or [""])[0] != outer.token or path not in bridge._results:
+                if (q.get("t") or [""])[0] != outer.token or (path not in bridge._results and path not in bridge._lib_paths):
                     self.send_response(403)
                     self.end_headers()
                     return
@@ -204,6 +206,7 @@ class Bridge:
     def __init__(self) -> None:
         self._window = None
         self._results: dict[str, core.ImageResult] = {}
+        self._lib_paths: set[str] = set()      # library card thumbnails the image server may serve
         self._engine = None
         self._stop = threading.Event()
         self._scanning = False
@@ -486,6 +489,8 @@ class Bridge:
             for k in range(0, len(allr), FINAL_CHUNK):          # duplicate info changed: refresh in chunks
                 self._emit("results", items=[self._sum(r) for r in allr[k:k + FINAL_CHUNK]],
                            done=total, total=total, eta=0)
+            if not self._stop.is_set():
+                self._note_library(root)
             self._emit("final", stopped=self._stop.is_set(), done=min(i_done, total), total=total)
         except Exception as exc:  # noqa: BLE001
             self._emit("error", message=f"Scan failed: {exc}")
@@ -494,6 +499,54 @@ class Bridge:
                 cache.close()
             self._scanning = False
             self._emit("idle")
+
+    # ---- library of scanned folders ----------------------------------------
+    def _note_library(self, root: Path) -> None:
+        rs = sorted(self._results)
+        if not rs:
+            return
+        step = max(1, len(rs) // 4)
+        lib = keeper_library.Library(db_file())
+        lib.note(root, len(rs), sum(1 for r in self._results.values() if r.is_flagged), rs[::step][:4])
+        lib.close()
+
+    def library(self) -> list:
+        """Every scanned folder (newest first), plus recent folders scanned before the library existed."""
+        lib = keeper_library.Library(db_file())
+        rows = lib.all()
+        lib.close()
+        seen = {os.path.normcase(os.path.abspath(r["folder"])) for r in rows}
+        for f in self._settings.get("recent", []) or []:
+            if os.path.normcase(os.path.abspath(f)) not in seen:
+                rows.append({"folder": f, "total": None, "flagged": None, "scanned": None, "thumbs": []})
+        for r in rows:
+            r["exists"] = Path(r["folder"]).is_dir()
+            self._lib_paths.update(r["thumbs"])
+        return rows
+
+    def library_remove(self, folder: str) -> dict:
+        """Forget a folder: its saved scan results, its library card and its recent entry. Photos are untouched."""
+        if self._scanning and self._root and os.path.normcase(str(self._root)) == os.path.normcase(os.path.abspath(folder)):
+            return {"ok": False, "error": "Close this folder before removing it."}
+        lib = keeper_library.Library(db_file())
+        lib.remove(folder)
+        lib.close()
+        c = self._open_cache()
+        if c is not None:
+            c.forget_folder(folder)
+            c.close()
+        key = os.path.normcase(os.path.abspath(folder))
+        self._settings.data["recent"] = [x for x in self._settings.get("recent", []) or []
+                                         if os.path.normcase(os.path.abspath(x)) != key]
+        self._settings.save()
+        return {"ok": True}
+
+    def folder_ok(self, folder: str) -> bool:
+        return Path(folder).is_dir()
+
+    def save_tabs(self, folders: list) -> None:
+        self._extras["tabs"] = [str(f) for f in (folders or [])][:20]
+        self._save_extras()
 
     def _finish_analysis(self) -> None:
         s, rs = self._settings, list(self._results.values())
@@ -935,11 +988,14 @@ class Bridge:
             return {"ok": False, "error": "Wait for the scan to finish."}
         n = 0
         c = self._open_cache() if what in ("results", "folder", "missing", "compact", "all") else None
+        lib = keeper_library.Library(db_file())
         try:
             if what == "results" and c:
                 n = c.clear()
+                lib.clear()
             elif what == "folder" and c and self._root:
                 n = c.forget_folder(self._root)
+                lib.remove(self._root)
             elif what == "missing" and c:
                 n = c.prune_missing()
             elif what == "compact" and c:
@@ -958,9 +1014,11 @@ class Bridge:
                     except OSError:
                         pass
             elif what == "all":
+                lib.clear()
                 n = (c.clear() if c else 0) + self._names.clear("names")
                 self._cluster_names, self._tags = {}, {}
         finally:
+            lib.close()
             if c is not None:
                 c.close()
         return {"ok": True, "removed": n, **self.db_info()}

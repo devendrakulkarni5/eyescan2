@@ -22,6 +22,7 @@ w.pywebview = { api: new Proxy({}, { get: (_, n) => async (...a) => { calls.push
   if (n === "pick_folder") return "C:\p2"; if (n === "start_scan") { calls.push("start_scan:" + JSON.stringify(a[1])); return { ok: true }; }
   if (n === "gpu_adapters") return ["NVIDIA GeForce 840M"]; if (n === "gpu_test") return { ok: true, text: "gpu ok" };
   if (n === "system_info") return { gpu: "GPU", people_ok: true }; if (n === "recent") return [{ folder: "C:\p", exists: true }];
+  if (n === "library") return [{ folder: "C:\a", total: 120, flagged: 7, scanned: Date.now() / 1000 - 3600, thumbs: ["C:\a\1.jpg"], exists: true }, { folder: "D:\gone", total: null, flagged: null, scanned: null, thumbs: [], exists: false }]; if (n === "folder_ok") return true;
   if (n === "thumb" || n === "preview" || n === "face_thumb") return "data:image/jpeg;base64,AA==";
   if (n === "bulk_preview") return { paths: [items[0].path], count: 1, bytes: 2e6, protected: 0, folder: "Closed Eyes" };
   if (n === "set_override") return [{ ...items[2], flagged: true }]; if (n === "set_threshold") return items;
@@ -29,7 +30,7 @@ w.pywebview = { api: new Proxy({}, { get: (_, n) => async (...a) => { calls.push
   if (n === "merge_people") { calls.push("merge_people:" + JSON.stringify(a)); return { ok: true, known: [], assign: {}, suggestions: [], people: [{ id: 1, name: a[1] || null, faces: 8, photos: [items[0].path], closed: 1, path: items[0].path, box: [.2,.2,.5,.5] }] }; }
   return { ok: true }; } }) };
 w.eval(fs.readFileSync(ui + "vendor/lucide.js", "utf8"));
-const src = fs.readFileSync(ui + "app.js", "utf8"); w.eval(src + String.fromCharCode(10) + "window.run = run; window.S = S; window.closeFolder = closeFolder; window.renderRail = renderRail;");
+const src = fs.readFileSync(ui + "app.js", "utf8"); w.eval(src + String.fromCharCode(10) + "window.run = run; window.S = S; window.closeFolder = closeFolder; window.renderRail = renderRail; window.switchTab = switchTab; window.closeTab = closeTab; window.showLibrary = showLibrary;");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   w.dispatchEvent(new w.Event("pywebviewready")); await sleep(50);
@@ -131,5 +132,31 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chk("merge_people called with both ids and the name", calls.some((c) => c.startsWith("merge_people:") && /Merged Mia/.test(c) && /1/.test(c) && /2/.test(c)));
   w.document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape" }));
   const lm = w.S.people; chk("rail list context menu offers sort and duplicates", true);
+  // ---- folder tabs + library ----
+  w.S.tabs = []; w.S.tab = -1; calls.length = 0;
+  const idle = () => { w.onEvent({ kind: "final", stopped: false }); w.onEvent({ kind: "idle" }); };
+  w.onEvent({ kind: "start", total: 5, folder: "C:\a" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); idle();
+  w.onEvent({ kind: "start", total: 5, folder: "C:\b" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); idle(); await sleep(200);
+  chk("each scanned folder becomes a tab", q("#ftabs .ft").length === 2 && !q("#ftabs")[0].classList.contains("hidden") && w.S.tab === 1);
+  chk("active tab is marked", q("#ftabs .ft")[1].classList.contains("on") && !q("#ftabs .ft")[0].classList.contains("on"));
+  w.S.sort = "blink"; w.S.query = "zz"; calls.length = 0;
+  await w.switchTab(0); await sleep(60);
+  chk("switching a tab unloads and re-opens through the saved results", calls.includes("close_folder") && calls.some((c) => c.startsWith("start_scan")));
+  w.onEvent({ kind: "start", total: 5, folder: "C:\a" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); idle(); await sleep(60);
+  chk("tab A active after switch", w.S.tab === 0 && w.S.folder === "C:\a");
+  await w.switchTab(1); await sleep(60);
+  w.onEvent({ kind: "start", total: 5, folder: "C:\b" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); idle(); await sleep(60);
+  chk("tab B restores its own sort and search", w.S.sort === "blink" && w.S.query === "zz" && w.document.getElementById("search").value === "zz");
+  calls.length = 0; await w.showLibrary(); await sleep(80);
+  chk("library button leaves the tabs open and shows the library", !w.document.getElementById("start").classList.contains("hidden") && q("#ftabs .ft").length === 2 && w.S.tab === -1 && calls.includes("library"));
+  chk("library cards (one offline)", q("#library .lcard").length === 2 && q("#library .lcard.off").length === 1 && /7 closed/.test(q("#library")[0].textContent) && /Open/.test(q("#library .lcard")[0].textContent));
+  q("#library .lcard")[0].click(); await sleep(60);
+  chk("clicking a card with an open tab re-opens that tab", calls.some((c) => c.startsWith("start_scan")) && w.S.tab === 0);
+  w.onEvent({ kind: "start", total: 5, folder: "C:\a" }); w.onEvent({ kind: "results", items, done: 5, total: 5, eta: 0 }); idle(); await sleep(60);
+  await w.closeTab(0); await sleep(80);
+  chk("closing the active tab opens its neighbour", w.S.tabs.length === 1 && w.S.tabs[0].folder === "C:\b" && calls.filter((c) => c.startsWith("start_scan")).length >= 2);
+  w.onEvent({ kind: "start", total: 5, folder: "C:\b" }); idle(); await sleep(30);
+  await w.closeTab(0); await sleep(80);
+  chk("closing the last tab returns to the library", w.S.tabs.length === 0 && !w.document.getElementById("start").classList.contains("hidden") && w.document.getElementById("ftabs").classList.contains("hidden") && calls.includes("save_tabs"));
   console.log("errors:", errs.length ? errs : "none"); process.exit(0);
 })();

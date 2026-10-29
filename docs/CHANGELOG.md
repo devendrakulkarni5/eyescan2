@@ -3,6 +3,13 @@
 (v1 history: `CHANGELOG-v1.md`.)
 
 ## Unreleased
+- **Folder tabs**: every folder you open becomes a tab under the menu bar. Switching reloads the folder from its saved scan results and
+  restores that tab's filter, sort, search, selection, marked-for-recycle photos and scroll position. Ctrl+Tab / Ctrl+Shift+Tab / Ctrl+1..9
+  switch, Ctrl+W (or middle-click) closes, the "+" button opens the library. Tabs are remembered across restarts (not re-scanned).
+  Switching while a scan runs asks first (scanned photos are kept; open the tab again to resume).
+- **Library** replaces the Recent list on the start screen: a card per scanned folder with a photo mosaic, photo and closed-eyes counts,
+  scan age and an Offline badge for missing drives; right-click or "..." for Open, Scan again, Show in Explorer, Remove from library.
+  New `folders` table in `eyescan2.db` (written after each scan; `keeper_library.py`), cleared with the scan results.
 - Scans start on **All photos** and switch to a chosen tab (default Closed eyes) when finished; Settings -> Scanning -> "Tab after scan finishes" changes it or turns it off.
 - Theme toggle uses one Lucide `sun-moon` icon; visible keyboard focus ring on buttons and menu items.
 - **Renamed to Keeper** (was EyeScan 2): new app name, window title, `Keeper.exe`, `Keeper-Setup-<version>.exe`, installer shortcuts.

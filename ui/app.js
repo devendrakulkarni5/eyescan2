@@ -5,6 +5,7 @@ const S = {
   items: new Map(), tiles: new Map(), sel: new Set(), focus: null, anchor: null, rejected: new Set(),
   filter: "closed", sub: "all", query: "", sort: "name", view: "grid", overlay: "box", only: null,
   scanning: false, visible: [], cfg: {}, info: {}, about: {}, folder: "", review: null, zoomFace: 0,
+  tabs: [], tab: -1, pendingView: null, restoreView: null, lib: [],
 };
 let api = null, renderTimer = null, sensTimer = null;
 
@@ -412,13 +413,20 @@ function buildMenus() {
 /* ---------- events from Python ---------- */
 window.onEvent = (e) => {
   if (e.kind === "start") {
+    if (!e.partial && S.folder) saveView();
+    const view = e.partial ? null : takeView(e.folder);
+    if (!e.partial) tabEnter(e.folder);
     if (!e.partial) { S.items.clear(); S.tiles.clear(); S.rejected.clear(); S.sel.clear(); S.focus = null; S.only = null; S.people = []; S.geo = {}; }
     if (!e.partial && (S.cfg.after_scan_tab || "closed") !== "off") { S.filter = "all"; S.sub = "all"; }
+    if (view) {
+      Object.assign(S, { filter: view.filter, sub: view.sub, query: view.query, sort: view.sort, rejected: new Set(view.rej), restoreView: view });
+      $("search").value = view.query; $("sort").value = view.sort;
+    }
     S.stopped = null; showNotice(); S.hiddenPeople = new Set(); resetStop();
     S.folder = e.folder; $("folder-name").textContent = baseName(e.folder);
     $("start").classList.add("hidden"); $("review").classList.remove("hidden");
     $("progress").classList.remove("hidden"); setProgress(0, e.total, null); S.scanning = true;
-    status("Scanning " + e.folder); renderInspector(); scheduleRender();
+    status("Scanning " + e.folder); renderInspector(); scheduleRender(); renderTabs();
   } else if (e.kind === "results") {
     e.items.forEach((r) => S.items.set(r.path, r)); setProgress(e.done, e.total, e.eta); scheduleRender();
   } else if (e.kind === "final") {
@@ -427,12 +435,13 @@ window.onEvent = (e) => {
     status(`${e.stopped ? "Stopped" : "Done"}: ${S.items.size} photos, ${n} with closed eyes`);
     if (e.stopped) S.stopped = { done: e.done, total: e.total };
     const tab = S.cfg.after_scan_tab || "closed";
-    if (tab !== "off" && !S.only) { S.filter = tab; S.sub = "all"; }
+    if (S.restoreView) restoreTail(S.restoreView);
+    else if (tab !== "off" && !S.only) { S.filter = tab; S.sub = "all"; }
     showNotice(); scheduleRender(); renderInspector();
     if (S.cfg.people && S.info.people_ok) loadPeople(true);
     api.recent().then((r) => { S.recent = r; });
   } else if (e.kind === "phase") { $("phase").textContent = e.text; if (S.scanning && !S.items.size) scheduleRender();
-  } else if (e.kind === "idle") { S.scanning = false; $("progress").classList.add("hidden"); resetStop(); scheduleRender();
+  } else if (e.kind === "idle") { S.scanning = false; $("progress").classList.add("hidden"); resetStop(); scheduleRender(); renderTabs();
   } else if (e.kind === "error") { toast(e.message); status(e.message);
   } else if (e.kind === "sheet_progress") { status(`Contact sheets: ${e.done} / ${e.total}`);
   } else if (e.kind === "sheet_done") {
@@ -860,15 +869,116 @@ async function peopleDialog(opts = {}) {
 
 /* ---------- close folder, stop button, person menu ---------- */
 function resetStop() { const b = $("stop"); b.disabled = false; $("stop-label").textContent = "Stop"; }
-async function closeFolder() {
-  if (!S.folder) return toast("No folder is open.");
+/* Reset everything that belongs to the open folder (the engine forgets it too). Photos and saved results are untouched. */
+async function unloadFolder() {
+  if (!S.folder) return true;
   $("stop-label").textContent = "Stopping…";
-  const r = await api.close_folder(); if (!r.ok) { resetStop(); return toast(r.error); }
+  const r = await api.close_folder(); if (!r.ok) { resetStop(); toast(r.error); return false; }
   S.items.clear(); S.tiles.clear(); S.sel.clear(); S.rejected.clear(); S.focus = null; S.only = null; S.people = []; S.geo = {}; S.gridPaths = null; S.hiddenPeople = new Set();
   S.folder = ""; S.stopped = null; S.scanning = false; showNotice(); resetStop(); $("progress").classList.add("hidden");
   if (closeModal) closeModal();
-  $("review").classList.add("hidden"); $("start").classList.remove("hidden"); $("folder-name").textContent = ""; $("grid").replaceChildren();
-  renderInspector(); status("Ready"); $("status-counts").textContent = ""; init();
+  $("folder-name").textContent = ""; $("grid").replaceChildren();
+  renderInspector(); status("Ready"); $("status-counts").textContent = "";
+  return true;
+}
+function goStart() {
+  S.tab = -1; $("review").classList.add("hidden"); $("start").classList.remove("hidden"); renderTabs(); renderLibrary();
+}
+async function closeFolder() {
+  if (!S.folder) return toast("No folder is open.");
+  if (S.tab >= 0) return closeTab(S.tab);
+  if (await unloadFolder()) goStart();
+}
+
+/* ---------- folder tabs: each opened folder is a tab; the engine holds one folder, switching reloads it from the saved results ---------- */
+const sameF = (a, b) => a.replace(/[\\/]+$/, "").toLowerCase() === b.replace(/[\\/]+$/, "").toLowerCase();
+const tabOf = (folder) => S.tabs.findIndex((t) => sameF(t.folder, folder));
+function persistTabs() { if (api) api.save_tabs(S.tabs.map((t) => t.folder)); }
+function saveView() {
+  const t = S.tabs[S.tab]; if (!t || !S.folder) return;
+  const sc = $(S.view === "list" ? "list" : "grid");
+  t.view = { filter: S.filter, sub: S.sub, query: S.query, sort: S.sort, scroll: sc ? sc.scrollTop : 0, sel: [...S.sel], rej: [...S.rejected] };
+}
+function takeView(folder) { const p = S.pendingView; S.pendingView = null; return p && sameF(p.folder, folder) ? p.view : null; }
+function restoreTail(v) {      // selection and scroll can only be restored once the photos are back
+  S.restoreView = null;
+  S.sel = new Set(v.sel.filter((p) => S.items.has(p))); S.focus = S.sel.size ? [...S.sel][0] : null;
+  setTimeout(() => { const sc = $(S.view === "list" ? "list" : "grid"); if (sc) sc.scrollTop = v.scroll; }, 350);
+}
+function tabEnter(folder) {
+  let i = tabOf(folder);
+  if (i < 0) { S.tabs.push({ folder, view: null }); i = S.tabs.length - 1; persistTabs(); }
+  S.tab = i;
+}
+function renderTabs() {
+  const el = $("ftabs"); el.classList.toggle("hidden", !S.tabs.length);
+  el.innerHTML = S.tabs.map((t, i) => `<div class="ft${i === S.tab ? " on" : ""}" role="tab" aria-selected="${i === S.tab}" tabindex="0" data-i="${i}" title="${esc(t.folder)}"><span class="dot${i === S.tab && S.scanning ? " scan" : ""}"></span><span class="fn">${esc(baseName(t.folder))}</span><button class="ghost x" data-x="${i}" title="Close tab (Ctrl+W)" aria-label="Close tab">${ico("x")}</button></div>`).join("") +
+    `<button class="ghost ftnew" data-lib title="Library: all scanned folders" aria-label="Library">${ico("plus")}</button>`;
+}
+async function openTab(t) {
+  S.pendingView = { folder: t.folder, view: t.view }; S.tab = S.tabs.indexOf(t); renderTabs();
+  if (!(await startScan(t.folder, false))) { S.pendingView = null; if (!S.folder) goStart(); }
+}
+async function switchTab(i) {
+  const t = S.tabs[i]; if (!t || (i === S.tab && S.folder)) return;
+  if (!(await api.folder_ok(t.folder))) return toast("That folder isn't available (is the drive connected?).");
+  const go = async () => { saveView(); if (S.folder && !(await unloadFolder())) return; openTab(t); };
+  if (S.scanning) return confirmBox({ title: "Stop scanning?", sub: baseName(S.folder), icon: "square", okLabel: "Stop and switch",
+    text: "Photos scanned so far are saved. Open this folder's tab again to resume.", onOk: go });
+  go();
+}
+async function closeTab(i) {
+  const t = S.tabs[i]; if (!t) return;
+  if (i !== S.tab) { S.tabs.splice(i, 1); if (i < S.tab) S.tab--; persistTabs(); return renderTabs(); }
+  if (!(await unloadFolder())) return;
+  S.tabs.splice(i, 1); persistTabs();
+  const next = S.tabs[Math.min(i, S.tabs.length - 1)];
+  S.tab = -1;
+  if (next && await api.folder_ok(next.folder)) openTab(next); else goStart();
+}
+function cycleTab(d) { const n = S.tabs.length; if (n > 1) switchTab(((S.tab < 0 ? (d > 0 ? -1 : 0) : S.tab) + d + n) % n); }
+async function showLibrary() {
+  if (isStart()) return;
+  const go = async () => { saveView(); if (await unloadFolder()) goStart(); };
+  if (S.scanning) return confirmBox({ title: "Stop scanning?", sub: baseName(S.folder), icon: "square", okLabel: "Stop and open library",
+    text: "Photos scanned so far are saved. Open this folder's tab again to resume.", onOk: go });
+  go();
+}
+/* open a folder: reuse its tab (and view) when it has one */
+function openFolderTab(folder) { const i = tabOf(folder); if (i >= 0) { const t = S.tabs[i]; return isStart() ? openTab(t) : switchTab(i); } return startScan(folder, false); }
+function tabMenu(i) {
+  const t = S.tabs[i];
+  return [{ l: "Close tab", k: "Ctrl+W", a: () => closeTab(i) },
+    { l: "Close other tabs", dis: S.tabs.length < 2, a: () => { for (let j = S.tabs.length - 1; j >= 0; j--) if (S.tabs[j] !== t && j !== S.tab) S.tabs.splice(j, 1); S.tab = S.tabs.findIndex((x) => x === t); persistTabs(); renderTabs(); } },
+    "-", { l: "Show in Explorer", a: () => api.reveal(t.folder) }];
+}
+
+/* ---------- library (start screen) ---------- */
+function ago(ts) {
+  if (!ts) return "";
+  const d = (Date.now() / 1000 - ts) / 86400;
+  if (d < 1 / 24) return "just now"; if (d < 1) return Math.floor(d * 24) + " h ago"; if (d < 2) return "yesterday";
+  if (d < 30) return Math.floor(d) + " days ago"; if (d < 365) return Math.floor(d / 30) + " mo ago"; return Math.floor(d / 365) + " y ago";
+}
+async function renderLibrary() {
+  const rows = S.lib = await api.library();
+  $("library").innerHTML = rows.length ? `<h3>Your library<span class="muted">${rows.length} scanned folder${rows.length > 1 ? "s" : ""}</span></h3><div class="libgrid">` + rows.map((r, i) => {
+    const open = tabOf(r.folder) >= 0;
+    const mos = [0, 1, 2, 3].map((k) => r.thumbs[k] && r.exists ? `<img src="${imgUrl(r.thumbs[k], 240)}" alt="" loading="lazy">` : "<i></i>").join("");
+    const meta = [r.total !== null ? `<span class="lb">${r.total.toLocaleString()} photos</span>` : `<span class="lb">Not summarised yet</span>`,
+      r.flagged ? `<span class="lb eyes">${r.flagged} closed</span>` : "", open ? `<span class="lb ok">Open</span>` : "", r.exists ? "" : `<span class="lb off">Offline</span>`].join("");
+    return `<div class="lcard${r.exists ? "" : " off"}" tabindex="0" role="button" data-i="${i}" title="${esc(r.folder)}"><div class="mos">${mos}</div>` +
+      `<div class="lp"><b>${esc(baseName(r.folder))}</b><span class="muted path">${esc(r.folder)}</span><div class="lmeta">${meta}</div><span class="muted when">${r.scanned ? "Scanned " + ago(r.scanned) : ""}</span></div>` +
+      `<button class="ghost sm lmore" data-more="${i}" title="More" aria-label="More actions">${ico("more-horizontal")}</button></div>`;
+  }).join("") + `</div>` : "";
+}
+function libMenu(r) {
+  return [{ l: "Open", a: () => r.exists ? openFolderTab(r.folder) : toast("That folder isn't available (is the drive connected?).") },
+    { l: "Scan again from scratch", dis: !r.exists, a: () => startScan(r.folder, true) },
+    { l: "Show in Explorer", dis: !r.exists, a: () => api.reveal(r.folder) }, "-",
+    { l: "Remove from library…", a: () => confirmBox({ title: "Remove from library?", sub: r.folder, icon: "trash", tone: "danger", okLabel: "Remove",
+        text: "The saved scan results for this folder are removed from the database. Your photos are not touched; scanning the folder again brings it back.",
+        onOk: async () => { const x = await api.library_remove(r.folder); if (!x.ok) return toast(x.error); const i = tabOf(r.folder); if (i >= 0) { S.tabs.splice(i, 1); persistTabs(); renderTabs(); } renderLibrary(); } }) }];
 }
 function confirmBox({ title, sub = "", icon = "info", tone = "", text, okLabel, onOk }) {
   dialog({ title, sub, icon, tone, body: `<p>${text}</p>`, buttons: [{ label: "Cancel", onClick: (x) => x() }, { label: okLabel, cls: tone === "danger" ? "danger" : "primary", onClick: async (x) => { x(); await onOk(); } }] });
@@ -917,6 +1027,7 @@ async function startScan(folder, force, given) {
   if (given) Object.assign(opts, given);
   else if (isStart()) { opts.recursive = $("o-recursive").checked; opts.robust = !$("o-fast").checked; opts.force = opts.force || $("o-force").checked; }
   const res = await api.start_scan(folder, opts); if (!res.ok) toast(res.error); else S.cfg = await api.get_settings();
+  return res.ok;
 }
 async function applyOverride(value) {
   const ps = selPaths(); if (!ps.length) return;
@@ -930,7 +1041,7 @@ const ACT = {
   rescan_all: () => S.folder ? startScan(S.folder, true) : ACT.open_folder(),
   "rescan-sel": async () => { const r = await api.rescan(selPaths()); if (!r.ok) toast(r.error); },
   stop: () => { $("stop").disabled = true; $("stop-label").textContent = "Stopping…"; api.stop_scan(); },
-  close_folder: closeFolder,
+  close_folder: closeFolder, library: showLibrary,
   csv: async () => { const r = await api.export_csv(); if (r.ok) status("Report saved: " + r.path); else if (!r.cancelled) toast(r.error); },
   sheets: sheetsDialog, settings: settingsDialog, exit: () => api.exit(),
   all: () => setSel(S.visible.map((r) => r.path), S.focus), none: () => setSel([]),
@@ -1002,7 +1113,7 @@ function updateActionBar() {
 
 /* ---------- menus ---------- */
 const MENUS = [
-  ["File", [{ l: "Open folder…", k: "Ctrl+O", a: "open_folder" }, { recent: true }, { l: "Close folder", k: "Ctrl+W", a: "close_folder" }, "-", { l: "Export CSV report…", k: "Ctrl+E", a: "csv" }, { l: "Export contact sheets…", k: "Ctrl+Shift+S", a: "sheets" }, "-", { l: "Settings…", k: "Ctrl+,", a: "settings" }, { l: "Database…", a: "settings_db" }, { l: "Exit", a: "exit" }]],
+  ["File", [{ l: "Open folder…", k: "Ctrl+O", a: "open_folder" }, { recent: true }, { l: "Library (all folders)", a: "library" }, { l: "Close tab", k: "Ctrl+W", a: "close_folder" }, "-", { l: "Export CSV report…", k: "Ctrl+E", a: "csv" }, { l: "Export contact sheets…", k: "Ctrl+Shift+S", a: "sheets" }, "-", { l: "Settings…", k: "Ctrl+,", a: "settings" }, { l: "Database…", a: "settings_db" }, { l: "Exit", a: "exit" }]],
   ["Edit", [{ l: "Select all", k: "Ctrl+A", a: "all" }, { l: "Select none", k: "Ctrl+D", a: "none" }, { l: "Invert selection", k: "Ctrl+I", a: "invert" }, "-",
     { l: "Select all eyes-closed photos", a: "sel_closed" }, { l: "Select extra copies (keep the best)", a: "sel_dups" }, { l: "Select blurry / misfocused", a: "sel_blur" }, "-",
     { l: "Copy file(s)", k: "Ctrl+C", a: "copyfiles" }, { l: "Rename…", k: "F2", a: "rename" }, { l: "Delete selected…", k: "Del", a: "delete" }, { l: "Remove selected from list", a: "remove" }]],
@@ -1023,16 +1134,31 @@ async function init() {
   $("o-recursive").checked = !!S.cfg.recursive; $("o-fast").checked = !S.cfg.robust;
   status(S.info.gpu || "Ready");
   if (S.cfg.check_updates !== false && !init.checked) { init.checked = true; setTimeout(() => checkUpdate(false), 3000); }
-  const rec = await api.recent(); S.recent = rec;
-  $("recent").innerHTML = rec.length ? `<h3>Recent folders<a class="muted" id="clr" style="cursor:pointer">clear</a></h3>` + rec.map((x) =>
-    `<div class="recent-item" data-f="${esc(x.folder)}"><span>${esc(baseName(x.folder))}</span><span class="muted">${esc(x.folder)}</span></div>`).join("") : "";
-  const clr = $("clr"); if (clr) clr.onclick = async (e) => { e.stopPropagation(); await api.clear_recent(); init(); };
+  S.recent = await api.recent();
+  if (!init.tabs) { init.tabs = true; S.tabs = (S.cfg.tabs || []).map((f) => ({ folder: f, view: null })); renderTabs(); }
+  renderLibrary();
 }
 window.addEventListener("pywebviewready", init);
 hydrateIcons(); buildMenus();
 
 $("pick").onclick = () => ACT.open_folder();
-$("recent").onclick = (e) => { const it = e.target.closest(".recent-item"); if (it) startScan(it.dataset.f, false); };
+$("library").onclick = (e) => {
+  const m = e.target.closest("[data-more]"), c = e.target.closest(".lcard"); if (!c) return;
+  const r = S.lib[+c.dataset.i]; if (!r) return;
+  if (m) { const b = m.getBoundingClientRect(); return showMenu(libMenu(r), b.left, b.bottom); }
+  if (r.exists) openFolderTab(r.folder); else toast("That folder isn't available (is the drive connected?).");
+};
+$("library").addEventListener("contextmenu", (e) => { const c = e.target.closest(".lcard"); if (c) { e.preventDefault(); showMenu(libMenu(S.lib[+c.dataset.i]), e.clientX, e.clientY); } });
+$("library").addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("lcard")) { e.preventDefault(); e.target.click(); } });
+$("library").addEventListener("error", (e) => { if (e.target.tagName === "IMG") e.target.remove(); }, true);
+$("ftabs").onclick = (e) => {
+  if (e.target.closest("[data-lib]")) return showLibrary();
+  const x = e.target.closest("[data-x]"); if (x) return closeTab(+x.dataset.x);
+  const t = e.target.closest(".ft"); if (t) switchTab(+t.dataset.i);
+};
+$("ftabs").onauxclick = (e) => { const t = e.target.closest(".ft"); if (t && e.button === 1) { e.preventDefault(); closeTab(+t.dataset.i); } };
+$("ftabs").addEventListener("contextmenu", (e) => { const t = e.target.closest(".ft"); if (t) { e.preventDefault(); showMenu(tabMenu(+t.dataset.i), e.clientX, e.clientY); } });
+$("ftabs").addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("ft")) { e.preventDefault(); switchTab(+e.target.dataset.i); } });
 $("theme-btn").onclick = ACT.theme;
 $("stop").onclick = ACT.stop;
 $("close-folder").onclick = closeFolder;
@@ -1103,6 +1229,8 @@ document.addEventListener("keydown", (e) => {
   if (c && k === "k") { e.preventDefault(); return paletteDialog(); }
   if (c && k === "o") { e.preventDefault(); return ACT.open_folder(); }
   if (c && k === "w") { e.preventDefault(); return closeFolder(); }
+  if (c && e.key === "Tab") { e.preventDefault(); return cycleTab(e.shiftKey ? -1 : 1); }
+  if (c && /^[1-9]$/.test(e.key) && S.tabs[+e.key - 1]) { e.preventDefault(); return switchTab(+e.key - 1); }
   if (c && k === "e") { e.preventDefault(); return ACT.csv(); }
   if (c && e.shiftKey && k === "s") { e.preventDefault(); return sheetsDialog(); }
   if (c && k === ",") { e.preventDefault(); return settingsDialog(); }

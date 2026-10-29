@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keeper - Switch scanned folder mockups</title>
+<!-- Theme: Light only (tokens copied from ui/app.css). Mock logic only. -->
+<style>
+:root{--sage:#97B881;--sage-d:#7DA066;--sage-l:#EDF2EA;--coral:#E88D78;--ocean:#8FB8CA;--ocean-l:#E8F3F8;--sun:#ECD489;--sun-l:#FBF7E6;--coral-l:#FDF2F0;
+--bg:#FAFCF9;--card:#fff;--canvas:#F3F6F1;--line:#E2E8F0;--text:#1F2937;--text2:#4B5563;--muted:#6B7280;--hover:#EDF2EA;--select:#DCE9D3;--shadow:0 10px 30px rgba(15,23,42,.18);--radius:10px}
+*{box-sizing:border-box}body{margin:0;background:#e9eee6;color:var(--text);font:14px "Segoe UI Variable","Segoe UI",system-ui,sans-serif}
+button{font:inherit;color:inherit;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 14px;cursor:pointer;transition:.15s}
+button:hover{background:var(--hover)}button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--sage-d);outline-offset:2px}
+button.ghost{background:transparent;border-color:transparent}button.sm{padding:3px 9px;font-size:12px}
+.muted{color:var(--muted)}
+.page{max-width:1200px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 2px}.lead{margin:0 0 12px;color:var(--muted)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button{border-radius:99px}.tabs button.on{background:var(--sage);border-color:var(--sage-d);font-weight:600}
+.note{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:13px;color:var(--text2)}
+.note b{color:var(--text)}
+.app{height:620px;background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:var(--shadow)}
+.menubar{display:flex;align-items:center;gap:4px;padding:2px 8px;background:var(--card);border-bottom:1px solid var(--line)}
+.menubar .m{padding:6px 11px;border-radius:6px}.menubar .m:hover{background:var(--hover)}
+.logo{width:20px;height:20px;border-radius:6px;background:var(--sage);margin-right:6px}
+.top{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--card);border-bottom:1px solid var(--line)}
+.top input{border:1px solid var(--line);border-radius:8px;padding:5px 9px;font:inherit;width:170px;margin-left:auto}
+.seg{display:flex}.seg span{border:1px solid var(--line);padding:4px 10px;font-size:12px}.seg span:first-child{border-radius:8px 0 0 8px;background:var(--select)}.seg span:last-child{border-radius:0 8px 8px 0}
+.body{flex:1;display:flex;min-height:0}
+.lib{width:240px;background:var(--card);border-right:1px solid var(--line);padding:10px;overflow:auto;flex:none}
+.rail{width:150px;background:var(--card);border-right:1px solid var(--line);padding:10px;flex:none;font-size:13px}
+.rail div{padding:6px 8px;border-radius:6px}.rail div.on{background:var(--select);font-weight:600}.rail small{float:right;color:var(--muted)}
+.center{flex:1;background:var(--canvas);padding:12px;overflow:hidden}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
+.tile{height:0;padding-bottom:100%;border-radius:8px;position:relative}
+.tile.c::after{content:"";position:absolute;right:6px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--coral)}
+.status{display:flex;gap:14px;padding:4px 12px;background:var(--card);border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.fi{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer}
+.fi:hover{background:var(--hover)}.fi.cur{background:var(--select)}
+.thumb{width:38px;height:38px;border-radius:7px;flex:none}
+.fi .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fi .s{font-size:12px;color:var(--muted);white-space:nowrap}
+.fi>div:nth-child(2){min-width:0;flex:1}
+.badge{font-size:11px;border-radius:99px;padding:1px 8px;white-space:nowrap}
+.b-ok{background:var(--sage-l);color:#4a6b3a}.b-new{background:var(--sun-l);color:#7a6420}.b-miss{background:var(--coral-l);color:#a24a38}.b-eyes{background:var(--ocean-l);color:#3d6477}
+.pop{position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;z-index:20}
+.pop h4{margin:6px 10px 4px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.pop .search{margin:4px;width:calc(100% - 8px);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit}
+.sep{height:1px;background:var(--line);margin:5px 2px}
+.ftab{display:flex;align-items:flex-end;gap:2px;padding:6px 8px 0;background:var(--canvas);border-bottom:1px solid var(--line)}
+.ft{display:flex;align-items:center;gap:8px;padding:7px 10px 7px 12px;border-radius:9px 9px 0 0;border:1px solid transparent;border-bottom:0;cursor:pointer;max-width:200px;color:var(--text2)}
+.ft:hover{background:var(--hover)}.ft.on{background:var(--card);border-color:var(--line);color:var(--text);font-weight:600;margin-bottom:-1px}
+.ft i{font-style:normal;color:var(--muted);border-radius:4px;padding:0 4px}.ft i:hover{background:var(--line)}
+.ft .dot{width:8px;height:8px;border-radius:50%;background:var(--sage)}.ft .dot.scan{background:var(--sun);animation:p 1s infinite alternate}
+@keyframes p{to{opacity:.3}}
+.scrim{position:absolute;inset:0;background:rgba(15,23,42,.35);display:flex;justify-content:center;padding-top:60px;z-index:30}
+.pal{width:min(560px,92%);height:fit-content;background:var(--card);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.pal input{width:100%;border:0;border-bottom:1px solid var(--line);padding:14px 16px;font:inherit;font-size:15px;outline:none}
+.kbd{border:1px solid var(--line);border-radius:5px;padding:0 6px;font-size:11px;color:var(--muted);background:var(--bg)}
+.hero{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;padding:14px;overflow:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;transition:.15s}.card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.card .mos{display:grid;grid-template-columns:1fr 1fr;height:96px}.card .p{padding:10px 12px}.card .p b{display:block}
+.add{display:flex;align-items:center;justify-content:center;border:2px dashed var(--line);background:transparent;color:var(--muted);min-height:170px}
+@media(max-width:700px){.rail,.lib{display:none}.top input{display:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body><div class="page">
+<h1>Switch between scanned folders</h1>
+<p class="lead">Five directions. Click inside each mock: folders, tabs and the switcher respond. Tell me which one (or a mix) you want.</p>
+<div class="tabs" role="tablist" id="tabs"></div>
+<div class="note" id="note"></div>
+<div class="app" id="app"></div>
+</div>
+<script>
+"use strict";
+var F=[
+ {n:"Wedding - Priya & Arjun",c:"1,248 photos",s:"Scanned 2 days ago",b:"ok",g:["#97B881","#8FB8CA","#ECD489","#C4B5D4"],e:23},
+ {n:"Goa trip",c:"612 photos",s:"Scanned today",b:"ok",g:["#8FB8CA","#E88D78","#ECD489","#97B881"],e:9},
+ {n:"Diwali 2025",c:"384 photos",s:"Scanning 62%...",b:"new",g:["#ECD489","#E88D78","#C4B5D4","#8FB8CA"],e:0},
+ {n:"School reunion",c:"205 photos",s:"Scanned last month",b:"ok",g:["#C4B5D4","#97B881","#E88D78","#ECD489"],e:5},
+ {n:"Old phone backup",c:"3,902 photos",s:"Drive not connected",b:"miss",g:["#cbd5e1","#e2e8f0","#cbd5e1","#e2e8f0"],e:41}
+];
+var P=["D:\\Photos\\Wedding2026","D:\\Photos\\Goa-Oct","E:\\Family\\Diwali25","D:\\Photos\\Reunion","F:\\Backup\\Phone"];
+var cur=1,V="a",open=false;
+function $(i){return document.getElementById(i)}
+function th(f){return '<div class="thumb" style="background:linear-gradient(135deg,'+f.g[0]+','+f.g[1]+')"></div>'}
+function bd(f){var m={ok:["b-ok","Saved"],"new":["b-new","Scanning"],miss:["b-miss","Offline"]}[f.b];return '<span class="badge '+m[0]+'">'+m[1]+'</span>'}
+function item(f,i,extra){return '<div class="fi'+(i===cur?' cur':'')+'" tabindex="0" data-i="'+i+'">'+th(f)+'<div><div class="n">'+f.n+'</div><div class="s">'+f.c+' &middot; '+f.s+'</div></div>'+(extra||bd(f))+'</div>'}
+function tiles(){var c=F[cur],h="";for(var i=0;i<24;i++)h+='<div class="tile'+(i%7===2?' c':'')+'" style="background:linear-gradient(135deg,'+c.g[i%4]+','+c.g[(i+1)%4]+')"></div>';return '<div class="grid">'+h+'</div>'}
+var MENU='<div class="menubar"><span class="logo"></span><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">Tools</span><span class="m">Help</span></div>';
+function chrome(topLeft,left,below){var c=F[cur];return MENU+(below||'')+
+ '<div class="top">'+topLeft+'<input type="search" placeholder="Search name or tag" aria-label="Search"><div class="seg"><span>Grid</span><span>List</span></div></div>'+
+ '<div class="body">'+left+'<div class="rail"><div class="on">All <small>'+parseInt(c.c.replace(",",""))+'</small></div><div>Eyes closed <small>'+c.e+'</small></div><div>Duplicates <small>14</small></div><div>Blurry <small>31</small></div><div>People <small>8</small></div></div><div class="center">'+tiles()+'</div></div>'+
+ '<div class="status"><span>Ready</span><span>'+P[cur]+'</span></div>'}
+var D={
+a:{note:"<b>A. Folder dropdown in the header</b> (in-theme, smallest change). The folder name becomes a button; one click lists every scanned folder with status. Replaces today's close-then-reopen round trip. Trade-off: one folder visible at a time; hidden until clicked.",
+ r:function(){var pop=open?'<div class="pop" style="left:50px;top:84px;width:410px"><input class="search" placeholder="Filter scanned folders" aria-label="Filter"><h4>Scanned folders</h4>'+F.map(function(f,i){return item(f,i)}).join("")+'<div class="sep"></div><div class="fi" tabindex="0"><div class="thumb" style="background:var(--sage-l);display:grid;place-items:center">+</div><div class="n">Open another folder&hellip;</div><span class="kbd" style="margin-left:auto">Ctrl+O</span></div></div>':'';
+  return chrome('<button class="ghost" id="trig" style="font-weight:600;font-size:15px">'+F[cur].n+' &#9662;</button><span class="muted">'+F[cur].c+'</span>','')+pop}},
+b:{note:"<b>B. Folder tabs</b> (extended). Each opened folder is a tab, like a browser; scroll position, filter and selection stay per tab, and a tab can keep scanning in the background (pulsing dot). Trade-off: uses vertical space; many folders needs overflow handling.",
+ r:function(){var t='<div class="ftab">'+F.slice(0,4).map(function(f,i){return '<div class="ft'+(i===cur?' on':'')+'" tabindex="0" data-i="'+i+'"><span class="dot'+(f.b==='new'?' scan':'')+'"></span>'+f.n.split(" - ")[0]+'<i>&times;</i></div>'}).join("")+'<div class="ft" style="color:var(--muted)">+</div></div>';
+  return chrome('<b style="font-size:15px">'+F[cur].n+'</b><span class="muted">'+F[cur].c+'</span>','',t)}},
+c:{note:"<b>C. Library sidebar</b> (extended). A collapsible left panel lists all scanned folders with thumbnails and an eyes-closed count, so you can hop quickly and see where the work is. Trade-off: costs about 240px of width (collapsible).",
+ r:function(){var l='<div class="lib"><div style="display:flex;align-items:center;margin-bottom:6px"><b>Library</b><button class="ghost sm" style="margin-left:auto" aria-label="Collapse">&laquo;</button></div>'+F.map(function(f,i){return item(f,i,f.e?'<span class="badge b-eyes">'+f.e+'</span>':'')}).join("")+'<button style="width:100%;margin-top:8px">Open folder&hellip;</button></div>';
+  return chrome('<b style="font-size:15px">'+F[cur].n+'</b><span class="muted">'+F[cur].c+'</span>',l)}},
+d:{note:"<b>D. Quick switcher (Ctrl+P)</b> (keyboard-first, no permanent UI cost). Click the folder name or press Ctrl+P, type a few letters, Enter. Trade-off: not discoverable without a menu entry and a hint.",
+ r:function(){var pal=open?'<div class="scrim"><div class="pal"><input id="q" placeholder="Switch to folder&hellip;" aria-label="Switch folder"><div style="padding:6px;max-height:340px;overflow:auto">'+F.map(function(f,i){return item(f,i,'<span class="kbd">'+(i+1)+'</span>')}).join("")+'</div></div></div>':'';
+  return chrome('<button class="ghost" id="trig"><b style="font-size:15px">'+F[cur].n+'</b> <span class="kbd">Ctrl+P</span></button>','')+pal}},
+e:{note:"<b>E. Library start screen</b>. The start screen's plain Recent list becomes cards with mosaic preview, counts and status. Nice first impression, but switching mid-review still means going back (Ctrl+W). Best combined with A or D.",
+ r:function(){return MENU+'<div style="padding:18px 18px 0"><h2 style="margin:0">Your library</h2><span class="muted">5 scanned folders &middot; results are saved, opening is instant</span></div><div class="hero">'+F.map(function(f,i){return '<div class="card" tabindex="0" data-i="'+i+'"><div class="mos">'+f.g.map(function(g){return '<div style="background:'+g+'"></div>'}).join("")+'</div><div class="p"><b>'+f.n+'</b><span class="muted" style="font-size:12px">'+f.c+'</span><div style="margin-top:6px">'+bd(f)+(f.e?' <span class="badge b-eyes">'+f.e+' eyes closed</span>':'')+'</div></div></div>'}).join("")+'<div class="card add" tabindex="0">+ Choose a new folder</div></div>'}}
+};
+var names={a:"A Dropdown",b:"B Tabs",c:"C Library sidebar",d:"D Quick switcher",e:"E Library start screen"};
+function draw(){
+ $("tabs").innerHTML=Object.keys(names).map(function(k){return '<button role="tab" aria-selected="'+(k===V)+'" class="'+(k===V?'on':'')+'" data-v="'+k+'">'+names[k]+'</button>'}).join("");
+ $("note").innerHTML=D[V].note;$("app").innerHTML=D[V].r();
+ var q=$("q");if(q)q.focus();
+}
+document.addEventListener("click",function(e){
+ var t=e.target.closest("[data-v]");if(t){V=t.dataset.v;open=false;return draw()}
+ if(e.target.closest("#trig")){open=!open;return draw()}
+ var i=e.target.closest("[data-i]");if(i&&F[+i.dataset.i].b!=="miss"){cur=+i.dataset.i;open=false;return draw()}
+ if(open&&!e.target.closest(".pop,.pal")){open=false;draw()}
+});
+document.addEventListener("keydown",function(e){
+ if(e.key==="Escape"&&open){open=false;draw()}
+ if(e.ctrlKey&&e.key==="p"&&V==="d"){e.preventDefault();open=true;draw()}
+ if(e.key==="Enter"&&e.target.dataset&&e.target.dataset.i)e.target.click();
+});
+draw();
+</script></body></html>
