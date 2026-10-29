@@ -45,7 +45,7 @@ MODEL_URL = (
     "face_landmarker/float16/1/face_landmarker.task"
 )
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 # Credits / copyright - single source of truth (About box, status bar, CLI,
 # installer and exe properties all read from here or mirror it).

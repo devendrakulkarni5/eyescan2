@@ -1,7 +1,7 @@
 ; Inno Setup script - wraps dist\EyeScan into a single Keeper-Setup.exe
 ; Build with build_installer.bat (needs Inno Setup 6: winget install JRSoftware.InnoSetup)
 #define AppName "Keeper"
-#define AppVersion "2.3.0"
+#define AppVersion "2.4.0"
 #define AppPublisher "Devendra Kulkarni - DEeV.in"
 #define AppURL "https://www.deev.in"
 

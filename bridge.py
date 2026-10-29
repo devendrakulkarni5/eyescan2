@@ -38,7 +38,7 @@ import eyescan_names  # noqa: E402
 import keeper_library  # noqa: E402
 
 APP_NAME = "Keeper"
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 # "owner/repo" of the GitHub repository whose latest Release (tag like v2.1.0) is the newest version
 # (a separate PUBLIC repo used only for installers: the source repo is private and would 404)
 GITHUB_REPO = "devendrakulkarni5/eyescan2-releases"
