@@ -18,3 +18,4 @@ backups/
 *.db
 *.csv
 doctor.txt
+*.log

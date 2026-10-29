@@ -1,7 +1,7 @@
 ; Inno Setup script - wraps dist\EyeScan into a single EyeScan2-Setup.exe
 ; Build with build_installer.bat (needs Inno Setup 6: winget install JRSoftware.InnoSetup)
 #define AppName "EyeScan 2"
-#define AppVersion "2.0.0"
+#define AppVersion "2.2.0"
 #define AppPublisher "Devendra Kulkarni - DEeV.in"
 #define AppURL "https://www.deev.in"
 
